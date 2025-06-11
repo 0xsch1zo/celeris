@@ -1,3 +1,8 @@
+use sesh::config;
+
 fn main() {
-    println!("Hello, world!");
+    let err = match config::Config::new() {
+        Err(e) => println!("{e}"),
+        Ok(_) => (),
+    };
 }
