@@ -2,39 +2,47 @@ use serde::Deserialize;
 use std::env;
 use std::fmt::{Display, Formatter};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 const CONFIG_DIR: &'static str = "sesh";
 const CONFIG_FILE: &'static str = "config.toml";
 
 #[derive(Deserialize, Debug)]
 pub struct Config {
-    search_roots: Vec<SearchRoot>,
+    pub search_roots: Vec<SearchRoot>,
+    pub exclude_directories: Option<Vec<String>>,
 }
 
 #[derive(Deserialize, Debug)]
 pub struct SearchRoot {
-    path: String,
-    depth: Option<u32>,
-    exclude: Option<String>,
+    pub path: String,
+    pub depth: Option<u32>,
+    pub excludes: Option<Vec<String>>,
 }
 
 pub enum Error {
-    NotFound,
+    ConfigNotFound,
     ParsingError(String),
+    PathNotFound(String),
+}
+
+pub enum PathType {
+    SearchRoot,
+    ExcludeDirectory,
 }
 
 impl Display for Error {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::ParsingError(msg) => write!(f, "Parsing error: {msg}"),
-            Self::NotFound => write!(
+            Self::ConfigNotFound => write!(
                 f,
                 "Couldn't find the main sesh config at \n\
                 - $XDG_CONFIG_HOME/{CONFIG_DIR}/{CONFIG_FILE} or \n\
                 - $HOME/.config/{CONFIG_DIR}/{CONFIG_FILE} or \n\
                 - $USER/home/.config/{CONFIG_DIR}/{CONFIG_FILE}"
             ),
+            Self::PathNotFound(path) => write!(f, "Path not found: {path}"),
         }
     }
 }
@@ -42,7 +50,7 @@ impl Display for Error {
 impl Config {
     pub fn new() -> Result<Self, Error> {
         let config_path = Self::find_config_path()?;
-        let config = fs::read_to_string(&config_path).map_err(|_| Error::NotFound)?;
+        let config = fs::read_to_string(&config_path).map_err(|_| Error::ConfigNotFound)?;
 
         let config: Config = toml::from_str(&config).map_err(|error| {
             Error::ParsingError(format!(
@@ -57,6 +65,32 @@ impl Config {
 
         println!("{config:?}");
         Ok(config)
+    }
+
+    fn validate_config(&self) -> Result<(), Error> {
+        self.search_roots.iter().try_for_each(|root| {
+            match Path::new(&root.path).exists() {
+                false => return Err(Error::PathNotFound(root.path.clone())),
+                _ => (),
+            };
+
+            match &root.excludes {
+                None => return Ok(()),
+                Some(excludes) => excludes
+                    .iter()
+                    .try_for_each(|exclude_path| match Path::new(&exclude_path).exists() {
+                        false => return Err(Error::PathNotFound(root.path.clone())),
+                        _ => Ok(()),
+                    })?,
+            };
+
+            Ok(())
+        })?;
+
+        match self.exclude_directories {
+            None => return Ok(()),
+            Some(exclude_directories) => exclude_directories.
+        }?;
     }
 
     fn find_config_path() -> Result<PathBuf, Error> {
@@ -81,8 +115,10 @@ impl Config {
                     .join(CONFIG_DIR)
                     .join(CONFIG_FILE))
             })
-            .map_err(|_: env::VarError| Error::NotFound)?;
+            .map_err(|_: env::VarError| Error::ConfigNotFound)?;
 
-        Ok(config_path.canonicalize().map_err(|_| Error::NotFound)?)
+        Ok(config_path
+            .canonicalize()
+            .map_err(|_| Error::ConfigNotFound)?)
     }
 }
