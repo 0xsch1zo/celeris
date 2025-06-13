@@ -23,7 +23,7 @@ pub struct SearchRoot {
 pub enum Error {
     ConfigNotFound,
     ParsingError(String),
-    PathNotFound(String),
+    NoSuchDirectory(String),
 }
 
 pub enum PathType {
@@ -35,14 +35,8 @@ impl Display for Error {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::ParsingError(msg) => write!(f, "Parsing error: {msg}"),
-            Self::ConfigNotFound => write!(
-                f,
-                "Couldn't find the main sesh config at \n\
-                - $XDG_CONFIG_HOME/{CONFIG_DIR}/{CONFIG_FILE} or \n\
-                - $HOME/.config/{CONFIG_DIR}/{CONFIG_FILE} or \n\
-                - $USER/home/.config/{CONFIG_DIR}/{CONFIG_FILE}"
-            ),
-            Self::PathNotFound(path) => write!(f, "Path not found: {path}"),
+            Self::ConfigNotFound => write!(f, "Couldn't find the main sesh config"),
+            Self::NoSuchDirectory(path) => write!(f, "No such directory: {path}"),
         }
     }
 }
@@ -52,70 +46,55 @@ impl Config {
         let config_path = Self::find_config_path()?;
         let config = fs::read_to_string(&config_path).map_err(|_| Error::ConfigNotFound)?;
 
-        let config: Config = toml::from_str(&config).map_err(|error| {
-            Error::ParsingError(format!(
-                "{}: {}",
-                error
-                    .span()
-                    .and_then(|range| { Some(format!("{}:{}", range.start, range.end)) })
-                    .unwrap_or("".to_string()),
-                error.message()
-            ))
-        })?;
+        let config: Config = toml::from_str(&config)
+            .map_err(|error| Error::ParsingError(error.message().to_string()))?;
 
         println!("{config:?}");
+        Self::validate_config(&config)?;
         Ok(config)
     }
 
     fn validate_config(&self) -> Result<(), Error> {
-        self.search_roots.iter().try_for_each(|root| {
-            match Path::new(&root.path).exists() {
-                false => return Err(Error::PathNotFound(root.path.clone())),
-                _ => (),
-            };
+        self.search_roots
+            .iter()
+            .map(|root| {
+                let root_path = Path::new(&root.path);
+                if !root_path.is_dir() {
+                    return Err(Error::NoSuchDirectory(root.path.clone()));
+                }
 
-            match &root.excludes {
-                None => return Ok(()),
-                Some(excludes) => excludes
-                    .iter()
-                    .try_for_each(|exclude_path| match Path::new(&exclude_path).exists() {
-                        false => return Err(Error::PathNotFound(root.path.clone())),
-                        _ => Ok(()),
-                    })?,
-            };
+                if let Some(excludes) = &root.excludes {
+                    Self::validate_directories(excludes)?;
+                }
 
-            Ok(())
-        })?;
+                Ok(())
+            })
+            .collect::<Result<Vec<_>, _>>()?;
 
-        match self.exclude_directories {
-            None => return Ok(()),
-            Some(exclude_directories) => exclude_directories.
-        }?;
+        // Global excludes
+        if let Some(excludes) = &self.exclude_directories {
+            Self::validate_directories(excludes)?;
+        }
+
+        Ok(())
+    }
+
+    fn validate_directories(paths: &Vec<String>) -> Result<(), Error> {
+        paths
+            .iter()
+            .map(|path_str| match Path::new(&path_str).is_dir() {
+                true => Ok(()),
+                false => Err(Error::NoSuchDirectory(path_str.to_string())),
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(())
     }
 
     fn find_config_path() -> Result<PathBuf, Error> {
-        let config_path: PathBuf = env::var("XDG_CONFIG_HOME")
-            .and_then(|config_home| {
-                Ok(PathBuf::from(&config_home)
-                    .join(CONFIG_DIR)
-                    .join(CONFIG_FILE))
-            })
-            .or_else(|_| {
-                let home = env::var("HOME")?;
-                Ok(PathBuf::from(home)
-                    .join(".config")
-                    .join(CONFIG_DIR)
-                    .join(CONFIG_FILE))
-            })
-            .or_else(|_: env::VarError| {
-                let user = env::var("USER")?;
-                Ok(PathBuf::from("/home")
-                    .join(user)
-                    .join(".config")
-                    .join(CONFIG_DIR)
-                    .join(CONFIG_FILE))
-            })
-            .map_err(|_: env::VarError| Error::ConfigNotFound)?;
+        let config_path: PathBuf = dirs::config_dir()
+            .ok_or(Error::ConfigNotFound)?
+            .join(CONFIG_DIR)
+            .join(CONFIG_FILE);
 
         Ok(config_path
             .canonicalize()
