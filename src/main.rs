@@ -1,8 +1,15 @@
 use sesh::config;
+use sesh::search;
+use std::process;
 
 fn main() {
-    let err = match config::Config::new() {
-        Err(e) => println!("{e}"),
-        Ok(_) => (),
+    let config = match config::Config::new() {
+        Ok(c) => c,
+        Err(err) => {
+            eprintln!("{err}");
+            process::exit(1);
+        }
     };
+
+    search::search(&config);
 }

@@ -1,5 +1,4 @@
 use serde::Deserialize;
-use std::env;
 use std::fmt::{Display, Formatter};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -82,9 +81,12 @@ impl Config {
     fn validate_directories(paths: &Vec<String>) -> Result<(), Error> {
         paths
             .iter()
-            .map(|path_str| match Path::new(&path_str).is_dir() {
-                true => Ok(()),
-                false => Err(Error::NoSuchDirectory(path_str.to_string())),
+            .map(|path_str| {
+                let path = Path::new(&path_str);
+                match !path.is_absolute() || path.is_dir() {
+                    true => Ok(()),
+                    false => Err(Error::NoSuchDirectory(path_str.to_string())),
+                }
             })
             .collect::<Result<Vec<_>, _>>()?;
         Ok(())
