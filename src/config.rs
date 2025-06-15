@@ -9,15 +9,22 @@ const CONFIG_FILE: &'static str = "config.toml";
 #[derive(Deserialize, Debug)]
 pub struct Config {
     pub search_roots: Vec<SearchRoot>,
-    pub exclude_directories: Option<Vec<String>>,
+    pub excludes: Option<Vec<String>>,
+    #[serde(default = "default_depth")]
+    pub depth: usize,
+    #[serde(default = "default_search_subdirs")]
+    pub search_subdirs: bool,
 }
 
 #[derive(Deserialize, Debug)]
 pub struct SearchRoot {
     pub path: String,
-    #[serde(default = "default_depth")]
-    pub depth: usize,
+    pub depth: Option<usize>,
     pub excludes: Option<Vec<String>>,
+}
+
+fn default_search_subdirs() -> bool {
+    false
 }
 
 fn default_depth() -> usize {
@@ -66,24 +73,14 @@ impl Config {
                 if !root_path.is_dir() {
                     return Err(Error::NoSuchDirectory(root.path.clone()));
                 }
-
-                if let Some(excludes) = &root.excludes {
-                    Self::validate_directories(excludes)?;
-                }
-
                 Ok(())
             })
             .collect::<Result<Vec<_>, _>>()?;
 
-        // Global excludes
-        if let Some(excludes) = &self.exclude_directories {
-            Self::validate_directories(excludes)?;
-        }
-
         Ok(())
     }
 
-    fn validate_directories(paths: &Vec<String>) -> Result<(), Error> {
+    /*fn validate_directories(paths: &Vec<String>) -> Result<(), Error> {
         paths
             .iter()
             .map(|path_str| {
@@ -95,7 +92,7 @@ impl Config {
             })
             .collect::<Result<Vec<_>, _>>()?;
         Ok(())
-    }
+    }*/
 
     fn find_config_path() -> Result<PathBuf, Error> {
         let config_path: PathBuf = dirs::config_dir()

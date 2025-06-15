@@ -6,7 +6,7 @@ use walkdir::{DirEntry, WalkDir};
 
 pub fn search(config: &Config) -> Result<Vec<String>, io::Error> {
     let global_excludes = config
-        .exclude_directories
+        .excludes
         .clone() // for sanity purposes
         .unwrap_or(Vec::<String>::new());
 
@@ -16,7 +16,7 @@ pub fn search(config: &Config) -> Result<Vec<String>, io::Error> {
         let local_excludes = root.excludes.clone().unwrap_or_default();
 
         let _: Vec<_> = WalkDir::new(&root.path)
-            .max_depth(root.depth)
+            .max_depth(root.depth.unwrap_or(config.depth))
             .into_iter()
             .filter_entry(|entry| {
                 if is_excluded_from(&global_excludes, entry)
@@ -24,7 +24,14 @@ pub fn search(config: &Config) -> Result<Vec<String>, io::Error> {
                 {
                     return false;
                 }
-                add_if_repo(entry, &mut repo_names)
+
+                // There was no other way to do it using walkdir
+                if !config.search_subdirs {
+                    add_if_repo(entry, &mut repo_names)
+                } else {
+                    add_if_repo(entry, &mut repo_names);
+                    true
+                }
             })
             .filter_map(|entry| entry.ok())
             .filter(|entry| entry.path().is_dir())
