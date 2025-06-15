@@ -15,8 +15,13 @@ pub struct Config {
 #[derive(Deserialize, Debug)]
 pub struct SearchRoot {
     pub path: String,
-    pub depth: Option<u32>,
+    #[serde(default = "default_depth")]
+    pub depth: usize,
     pub excludes: Option<Vec<String>>,
+}
+
+fn default_depth() -> usize {
+    10
 }
 
 pub enum Error {

@@ -11,5 +11,9 @@ fn main() {
         }
     };
 
-    search::search(&config);
+    let repos = search::search(&config);
+    if let Err(err) = repos {
+        eprint!("{err}");
+        process::exit(1);
+    }
 }
