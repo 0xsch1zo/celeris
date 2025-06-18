@@ -1,6 +1,6 @@
 use crate::utils;
 use git2::Repository;
-use std::cell::RefCell;
+use std::cell::{Ref, RefCell};
 use std::path::PathBuf;
 use walkdir::DirEntry;
 
@@ -79,10 +79,10 @@ impl Sessions {
         }
     }
 
-    pub fn get(&self) -> Vec<Session> {
+    pub fn get(&self) -> Vec<Ref<'_, Session>> {
         self.sessions
             .iter()
-            .map(|session| session.borrow().clone())
+            .map(|session| session.borrow())
             .collect::<Vec<_>>()
     }
 }

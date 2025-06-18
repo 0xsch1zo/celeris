@@ -1,19 +1,13 @@
-use sesh::config;
-use sesh::search;
-use std::process;
+use color_eyre::Result;
+use sesh::config::Config;
+use sesh::search::search;
 
-fn main() {
-    let config = match config::Config::new() {
-        Ok(c) => c,
-        Err(err) => {
-            eprintln!("{err}");
-            process::exit(1);
-        }
-    };
+fn main() -> Result<()> {
+    color_eyre::config::HookBuilder::default()
+        .display_env_section(false)
+        .install()?;
+    let config = Config::new()?;
+    let repos = search(&config)?;
 
-    let repos = search::search(&config);
-    if let Err(err) = repos {
-        eprint!("{err}");
-        process::exit(1);
-    }
+    Ok(())
 }

@@ -1,5 +1,7 @@
+use color_eyre::eyre::Context;
+use color_eyre::{Result, eyre};
+use eyre::eyre;
 use serde::Deserialize;
-use std::fmt::{Display, Formatter};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -31,48 +33,33 @@ fn default_depth() -> usize {
     10
 }
 
-pub enum Error {
-    ConfigNotFound,
-    ParsingError(String),
-    NoSuchDirectory(String),
-}
-
 pub enum PathType {
     SearchRoot,
     ExcludeDirectory,
 }
 
-impl Display for Error {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::ParsingError(msg) => write!(f, "Parsing error: {msg}"),
-            Self::ConfigNotFound => write!(f, "Couldn't find the main sesh config"),
-            Self::NoSuchDirectory(path) => write!(f, "No such directory: {path}"),
-        }
-    }
-}
-
 impl Config {
-    pub fn new() -> Result<Self, Error> {
+    pub fn new() -> Result<Self> {
         let config_path = Self::find_config_path()?;
-        let config = fs::read_to_string(&config_path).map_err(|_| Error::ConfigNotFound)?;
+        let config = fs::read_to_string(&config_path).wrap_err("Main sesh config not found")?;
 
-        let config: Config = toml::from_str(&config)
-            .map_err(|error| Error::ParsingError(error.message().to_string()))?;
+        let config: Config = toml::from_str(&config).wrap_err("Parsing error")?;
 
-        println!("{config:?}");
         Self::validate_config(&config)?;
         Ok(config)
     }
 
-    fn validate_config(&self) -> Result<(), Error> {
+    fn validate_config(&self) -> Result<()> {
         self.search_roots
             .iter()
             .map(|root| {
                 let root_path = Path::new(&root.path);
-                if !root_path.is_dir() {
-                    return Err(Error::NoSuchDirectory(root.path.clone()));
+                if !root_path.exists() {
+                    return Err(eyre!("Path not found: {}", root.path.clone()));
+                } else if !root_path.is_dir() {
+                    return Err(eyre!("Path is not a directory: {}", root.path.clone()));
                 }
+
                 Ok(())
             })
             .collect::<Result<Vec<_>, _>>()?;
@@ -80,28 +67,14 @@ impl Config {
         Ok(())
     }
 
-    /*fn validate_directories(paths: &Vec<String>) -> Result<(), Error> {
-        paths
-            .iter()
-            .map(|path_str| {
-                let path = Path::new(&path_str);
-                match !path.is_absolute() || path.is_dir() {
-                    true => Ok(()),
-                    false => Err(Error::NoSuchDirectory(path_str.to_string())),
-                }
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok(())
-    }*/
-
-    fn find_config_path() -> Result<PathBuf, Error> {
+    fn find_config_path() -> Result<PathBuf> {
         let config_path: PathBuf = dirs::config_dir()
-            .ok_or(Error::ConfigNotFound)?
+            .ok_or(eyre!("Couldn't find config dir to look for config"))?
             .join(CONFIG_DIR)
             .join(CONFIG_FILE);
 
         Ok(config_path
             .canonicalize()
-            .map_err(|_| Error::ConfigNotFound)?)
+            .wrap_err("Main sesh config not found")?)
     }
 }

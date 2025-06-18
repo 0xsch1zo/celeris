@@ -1,10 +1,10 @@
 use crate::config::Config;
 use crate::sessions::{Session, Sessions};
-use std::io;
+use color_eyre::Result;
 use std::path::Path;
 use walkdir::{DirEntry, WalkDir};
 
-pub fn search(config: &Config) -> Result<Vec<Session>, io::Error> {
+pub fn search(config: &Config) -> Result<Vec<Session>> {
     let global_excludes = config
         .excludes
         .clone() // for sanity purposes
@@ -40,7 +40,7 @@ pub fn search(config: &Config) -> Result<Vec<Session>, io::Error> {
 
     let smth = sessions.get();
     smth.iter().for_each(|sesh| println!("{sesh:?}"));
-    Ok(smth)
+    Ok(smth.into_iter().map(|sesh| sesh.clone()).collect())
 }
 
 fn is_excluded_from(excludes: &Vec<String>, entry: &DirEntry) -> bool {
