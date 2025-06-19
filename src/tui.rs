@@ -1,4 +1,3 @@
-use crate::sessions::Sessions;
 use color_eyre::Result;
 use crossterm::event::{self, Event};
 use ratatui::{
@@ -11,7 +10,6 @@ use std::{io::Stdout, time::Duration};
 use tui_input::{Input, backend::crossterm::EventHandler};
 
 struct Model {
-    sessions: Sessions,
     search_bar: Input,
     prompt: String,
     running_state: RunningState,
@@ -20,7 +18,6 @@ struct Model {
 impl Model {
     fn new() -> Self {
         Self {
-            sessions: Sessions::new(),
             search_bar: Input::new(String::new()),
             prompt: "> ".into(),
             running_state: RunningState::Running,

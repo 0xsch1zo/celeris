@@ -1,16 +1,16 @@
 use crate::config::Config;
-use crate::sessions::{Session, Sessions};
+use crate::repos::{Repo, RepoManager};
 use color_eyre::Result;
 use std::path::Path;
 use walkdir::{DirEntry, WalkDir};
 
-pub fn search(config: &Config) -> Result<Vec<Session>> {
+pub fn search(config: &Config) -> Result<Vec<Repo>> {
     let global_excludes = config
         .excludes
         .clone() // for sanity purposes
         .unwrap_or(Vec::<String>::new());
 
-    let mut sessions = Sessions::new();
+    let mut manager = RepoManager::new();
     // Side-effects were needed
     config.search_roots.iter().for_each(|root| {
         let local_excludes = root.excludes.clone().unwrap_or_default();
@@ -27,9 +27,9 @@ pub fn search(config: &Config) -> Result<Vec<Session>> {
 
                 // There was no other way to do it using walkdir
                 if !config.search_subdirs {
-                    sessions.push_if_repo(entry)
+                    manager.push_if_repo(entry)
                 } else {
-                    sessions.push_if_repo(entry);
+                    manager.push_if_repo(entry);
                     true
                 }
             })
@@ -38,9 +38,11 @@ pub fn search(config: &Config) -> Result<Vec<Session>> {
             .collect();
     });
 
-    let smth = sessions.get();
-    smth.iter().for_each(|sesh| println!("{sesh:?}"));
-    Ok(smth.into_iter().map(|sesh| sesh.clone()).collect())
+    Ok(manager
+        .repos
+        .iter()
+        .map(|repo| repo.borrow().clone())
+        .collect::<Vec<_>>())
 }
 
 fn is_excluded_from(excludes: &Vec<String>, entry: &DirEntry) -> bool {

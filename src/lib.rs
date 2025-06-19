@@ -1,5 +1,4 @@
 pub mod config;
-pub mod search;
-pub mod sessions;
+pub mod repos;
 pub mod tui;
 mod utils;
