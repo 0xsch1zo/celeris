@@ -1,12 +1,10 @@
+use crate::utils;
 use color_eyre::eyre::Context;
 use color_eyre::{Result, eyre};
 use eyre::eyre;
 use serde::Deserialize;
 use std::fs;
-use std::path::{Path, PathBuf};
-
-const CONFIG_DIR: &'static str = "sesh";
-const CONFIG_FILE: &'static str = "config.toml";
+use std::path::Path;
 
 #[derive(Deserialize, Debug)]
 pub struct Config {
@@ -40,7 +38,8 @@ pub enum PathType {
 
 impl Config {
     pub fn new() -> Result<Self> {
-        let config_path = Self::find_config_path()?;
+        const CONFIG_FILE: &'static str = "config.toml";
+        let config_path = utils::config_dir()?.join(CONFIG_FILE);
         let config = fs::read_to_string(&config_path).wrap_err("Main sesh config not found")?;
 
         let config: Config = toml::from_str(&config).wrap_err("Parsing error")?;
@@ -65,16 +64,5 @@ impl Config {
             .collect::<Result<Vec<_>, _>>()?;
 
         Ok(())
-    }
-
-    fn find_config_path() -> Result<PathBuf> {
-        let config_path: PathBuf = dirs::config_dir()
-            .ok_or(eyre!("Couldn't find config dir to look for config"))?
-            .join(CONFIG_DIR)
-            .join(CONFIG_FILE);
-
-        Ok(config_path
-            .canonicalize()
-            .wrap_err("Main sesh config not found")?)
     }
 }

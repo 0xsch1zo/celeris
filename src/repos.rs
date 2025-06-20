@@ -1,4 +1,5 @@
 pub mod search;
+
 use crate::utils;
 use git2::Repository;
 use std::cell::RefCell;
