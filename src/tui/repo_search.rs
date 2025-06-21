@@ -3,7 +3,10 @@ use crate::repos::search::search;
 use crate::tui::{RunningState, SearchModel, SearchResults};
 use color_eyre::Result;
 use crossterm::event::{self, Event};
+use nucleo::Nucleo;
 use ratatui::prelude::*;
+use std::error::Error;
+use std::fmt::Display;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -37,14 +40,64 @@ impl RepoModel {
 enum SearchState {
     NotStarted,
     Running(throbber::ThrobberState, Rc<Receiver<SearchResults>>),
-    Done(SearchResults),
+    Done(SearchResults, Nucleo<String>, Arc<dyn Fn() + Sync + Send>),
 }
 
 enum Message {
     Input(event::Event),
     StartSearch,
     SearchEnded(SearchResults),
+    UpdateThrobber,
     Quit,
+}
+
+#[derive(Debug)]
+struct StateError(String);
+
+impl Display for StateError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "program is in a bad state {0}", self)
+    }
+}
+
+impl Error for StateError {}
+
+impl SearchModel for RepoModel {
+    fn main_loop<T: Backend>(mut self, term: &mut Terminal<T>) -> Result<()> {
+        if let SearchState::NotStarted = self.search_state {
+            update(&mut self, Message::StartSearch)?;
+        }
+
+        while self.running_state != RunningState::Done {
+            term.draw(|frame| {
+                view(&mut self, frame); // because of stateful widgets
+            })?;
+
+            if let Some(msg) = handle_events()? {
+                update(&mut self, msg)?;
+            }
+
+            if let SearchState::Running(_, ref rx) = self.search_state {
+                match rx.try_recv() {
+                    Ok(r) => update(&mut self, Message::SearchEnded(r))?,
+                    Err(_) => {
+                        update(&mut self, Message::UpdateThrobber)?;
+                    }
+                }
+            }
+
+            if let SearchState::Done(ref results, ref matcher, ref notify) = self.search_state {}
+        }
+        Ok(())
+    }
+
+    fn search_bar(&self) -> &Input {
+        &self.search_bar
+    }
+
+    fn prompt(&self) -> String {
+        self.prompt.clone()
+    }
 }
 
 fn handle_events() -> Result<Option<Message>> {
@@ -68,41 +121,7 @@ fn handle_key(key: event::KeyEvent) -> Option<Message> {
     }
 }
 
-impl SearchModel for RepoModel {
-    fn main_loop<T: Backend>(mut self, term: &mut Terminal<T>) -> Result<()> {
-        if let SearchState::NotStarted = self.search_state {
-            update(&mut self, Message::StartSearch);
-        }
-
-        while self.running_state != RunningState::Done {
-            term.draw(|frame| {
-                view(&mut self, frame); // because of stateful widgets
-            })?;
-
-            if let Some(msg) = handle_events()? {
-                update(&mut self, msg);
-            }
-
-            if let SearchState::Running(_, ref rx) = self.search_state {
-                match rx.try_recv() {
-                    Ok(r) => update(&mut self, Message::SearchEnded(r)),
-                    Err(_) => {}
-                }
-            }
-        }
-        Ok(())
-    }
-
-    fn search_bar(&self) -> &Input {
-        &self.search_bar
-    }
-
-    fn prompt(&self) -> String {
-        self.prompt.clone()
-    }
-}
-
-fn update(model: &mut RepoModel, msg: Message) {
+fn update(model: &mut RepoModel, msg: Message) -> Result<()> {
     match msg {
         Message::Quit => model.running_state = RunningState::Done,
         Message::Input(evt) => {
@@ -110,11 +129,34 @@ fn update(model: &mut RepoModel, msg: Message) {
         }
         Message::StartSearch => start_search(model),
         Message::SearchEnded(results) => {
-            model.search_state = SearchState::Done(results);
+            let notify = Arc::new(|| println!("aSFasdf"));
+            // The idiomatic way of cloning doesn't work somehow
+            let nucleo = Nucleo::<String>::new(nucleo::Config::DEFAULT, notify.clone(), None, 1);
+            /*results
+            .iter()
+            .for_each(|result| nucleo.injector().push(result));*/
+
+            model.search_state = SearchState::Done(results, nucleo, notify);
+        }
+        Message::UpdateThrobber => {
+            if let SearchState::Running(ref mut throbber_state, _) = model.search_state {
+                throbber_state.calc_next();
+            } else {
+                return Err(StateError(String::from(
+                    "got message to update throbber when the search is not running",
+                ))
+                .into());
+            }
         }
     };
+    Ok(())
 }
 
+/*
+fn notify() {
+    println!("notified")
+}
+*/
 fn view(model: &mut RepoModel, frame: &mut Frame) {
     let layout = layout().split(frame.area());
     match model.search_state {
@@ -128,15 +170,11 @@ fn view(model: &mut RepoModel, frame: &mut Frame) {
 fn render_throbber(frame: &mut Frame, area: Rect, state: &mut throbber::ThrobberState) {
     let throbber = throbber::Throbber::default()
         .label("Searching...")
-        .throbber_style(
-            Style::default()
-                .fg(Color::Green)
-                .add_modifier(Modifier::BOLD),
-        )
+        .style(Style::default().add_modifier(Modifier::BOLD))
+        .throbber_style(Style::default().fg(Color::Green))
         .throbber_set(throbber::BRAILLE_SIX)
         .use_type(throbber::WhichUse::Spin);
     frame.render_stateful_widget(throbber, area, state);
-    state.calc_next(); // no need to wait because the tick rate is being maintained by event::poll
 }
 
 fn layout() -> Layout {
