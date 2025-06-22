@@ -3,8 +3,9 @@ use crate::repos::search::search;
 use crate::tui::{RunningState, SearchModel, SearchResults};
 use color_eyre::Result;
 use crossterm::event::{self, Event};
-use nucleo::Nucleo;
+use nucleo::{Nucleo, Utf32String};
 use ratatui::prelude::*;
+use ratatui::widgets::{List, ListDirection, ListState};
 use std::error::Error;
 use std::fmt::Display;
 use std::rc::Rc;
@@ -17,7 +18,6 @@ use tui_input::backend::crossterm::EventHandler;
 
 pub struct RepoModel {
     search_bar: Input,
-    prompt: String,
     running_state: RunningState,
     search_state: SearchState,
     config: Arc<Config>,
@@ -29,7 +29,6 @@ impl RepoModel {
     pub fn new(config: Config) -> Self {
         Self {
             search_bar: Input::new(String::new()),
-            prompt: "> ".into(),
             running_state: RunningState::Running,
             search_state: SearchState::NotStarted,
             config: Arc::new(config),
@@ -40,14 +39,17 @@ impl RepoModel {
 enum SearchState {
     NotStarted,
     Running(throbber::ThrobberState, Rc<Receiver<SearchResults>>),
-    Done(SearchResults, Nucleo<String>, Arc<dyn Fn() + Sync + Send>),
+    Done(ListModel),
 }
 
 enum Message {
     Input(event::Event),
+    Tick,
     StartSearch,
     SearchEnded(SearchResults),
     UpdateThrobber,
+    SelectNext,
+    SelectPrev,
     Quit,
 }
 
@@ -86,7 +88,9 @@ impl SearchModel for RepoModel {
                 }
             }
 
-            if let SearchState::Done(ref results, ref matcher, ref notify) = self.search_state {}
+            if let SearchState::Done(_) = self.search_state {
+                update(&mut self, Message::Tick)?
+            }
         }
         Ok(())
     }
@@ -94,9 +98,53 @@ impl SearchModel for RepoModel {
     fn search_bar(&self) -> &Input {
         &self.search_bar
     }
+}
 
-    fn prompt(&self) -> String {
-        self.prompt.clone()
+struct ListModel {
+    items: Vec<String>,
+    nucleo: Nucleo<String>,
+    state: ListState,
+}
+
+impl ListModel {
+    fn new(results: Vec<String>) -> Self {
+        let nucleo = Nucleo::<String>::new(nucleo::Config::DEFAULT, Arc::new(|| {}), None, 1);
+        let injector = nucleo.injector();
+        results.iter().for_each(|result| {
+            injector.push(result.to_string(), |s, dst| {
+                dst[0] = Utf32String::from(s as &str)
+            });
+        });
+
+        Self {
+            items: results,
+            nucleo,
+            state: ListState::default(),
+        }
+    }
+
+    fn items(&self) -> &[String] {
+        &self.items
+    }
+
+    fn select_first(&mut self) {
+        self.state.select_first();
+    }
+
+    fn select_prev(&mut self) {
+        self.state.select_previous();
+    }
+
+    fn select_next(&mut self) {
+        self.state.select_next();
+    }
+
+    fn tick(&mut self) {
+        self.nucleo.tick(10);
+    }
+
+    fn snapshot(&self) -> &nucleo::Snapshot<String> {
+        self.nucleo.snapshot()
     }
 }
 
@@ -113,6 +161,16 @@ fn handle_events() -> Result<Option<Message>> {
 }
 
 fn handle_key(key: event::KeyEvent) -> Option<Message> {
+    if !key.is_press() {
+        return None;
+    }
+
+    if key.code.is_up() {
+        return Some(Message::SelectNext);
+    } else if key.code.is_down() {
+        return Some(Message::SelectPrev);
+    }
+
     match key.code {
         event::KeyCode::Char('c') if key.modifiers.contains(event::KeyModifiers::CONTROL) => {
             Some(Message::Quit)
@@ -129,14 +187,9 @@ fn update(model: &mut RepoModel, msg: Message) -> Result<()> {
         }
         Message::StartSearch => start_search(model),
         Message::SearchEnded(results) => {
-            let notify = Arc::new(|| println!("aSFasdf"));
-            // The idiomatic way of cloning doesn't work somehow
-            let nucleo = Nucleo::<String>::new(nucleo::Config::DEFAULT, notify.clone(), None, 1);
-            /*results
-            .iter()
-            .for_each(|result| nucleo.injector().push(result));*/
-
-            model.search_state = SearchState::Done(results, nucleo, notify);
+            let mut list_model = ListModel::new(results?);
+            list_model.select_first();
+            model.search_state = SearchState::Done(list_model);
         }
         Message::UpdateThrobber => {
             if let SearchState::Running(ref mut throbber_state, _) = model.search_state {
@@ -148,29 +201,69 @@ fn update(model: &mut RepoModel, msg: Message) -> Result<()> {
                 .into());
             }
         }
+        Message::Tick => {
+            if let SearchState::Done(ref mut list_model) = model.search_state {
+                list_model.tick();
+            } else {
+                return Err(StateError(String::from("tick called when search is not done")).into());
+            }
+        }
+        Message::SelectPrev => {
+            if let SearchState::Done(ref mut list_model) = model.search_state {
+                list_model.select_prev();
+            }
+        }
+        Message::SelectNext => {
+            if let SearchState::Done(ref mut list_model) = model.search_state {
+                list_model.select_next();
+            }
+        }
     };
     Ok(())
 }
 
-/*
-fn notify() {
-    println!("notified")
-}
-*/
 fn view(model: &mut RepoModel, frame: &mut Frame) {
     let layout = layout().split(frame.area());
+
     match model.search_state {
         SearchState::Running(ref mut state, _) => render_throbber(frame, layout[1], state),
-        SearchState::Done(ref results) => {}
+        SearchState::Done(ref mut list_model) => {
+            render_list(frame, layout[0], list_model);
+            render_item_counter(frame, layout[1], list_model)
+        }
         _ => {}
     };
     super::render_input(model, frame, layout[2]);
 }
 
+fn render_list(frame: &mut Frame, area: Rect, list_model: &mut ListModel) {
+    let elements = list_model
+        .items()
+        .iter()
+        .map(|s| super::padding_str() + s)
+        .collect::<Vec<_>>();
+    let list = List::new(elements)
+        .highlight_symbol("▌")
+        .highlight_style(Style::default().bg(Color::Black).fg(Color::Yellow))
+        .direction(ListDirection::BottomToTop);
+    frame.render_stateful_widget(list, area, &mut list_model.state);
+}
+
+fn render_item_counter(frame: &mut Frame, area: Rect, list_model: &ListModel) {
+    let snap = list_model.snapshot();
+    let item_counter = Line::from(format!(
+        "{}{}/{}",
+        super::padding_str(),
+        snap.matched_item_count(),
+        snap.item_count(),
+    ));
+    frame.render_widget(item_counter, area);
+}
+
 fn render_throbber(frame: &mut Frame, area: Rect, state: &mut throbber::ThrobberState) {
     let throbber = throbber::Throbber::default()
         .label("Searching...")
-        .style(Style::default().add_modifier(Modifier::BOLD))
+        .style(ratatui::style::Style::default().add_modifier(Modifier::BOLD))
         .throbber_style(Style::default().fg(Color::Green))
         .throbber_set(throbber::BRAILLE_SIX)
         .use_type(throbber::WhichUse::Spin);
