@@ -1,11 +1,12 @@
 use crate::config::Config;
 use crate::repos::search::search;
-use crate::tui::{RunningState, SearchModel, SearchResults};
+use crate::tui::{PADDING, RunningState, SearchModel, SearchResults};
 use color_eyre::Result;
+use color_eyre::eyre::OptionExt;
 use crossterm::event::{self, Event};
-use nucleo::{Nucleo, Utf32String};
+use nucleo::{Matcher, Nucleo, Utf32String};
 use ratatui::prelude::*;
-use ratatui::widgets::{List, ListDirection, ListState};
+use ratatui::widgets::{List, ListDirection, ListItem, ListState};
 use std::error::Error;
 use std::fmt::Display;
 use std::rc::Rc;
@@ -58,7 +59,7 @@ struct StateError(String);
 
 impl Display for StateError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "program is in a bad state {0}", self)
+        write!(f, "program is in a bad state: {0}", self)
     }
 }
 
@@ -101,8 +102,8 @@ impl SearchModel for RepoModel {
 }
 
 struct ListModel {
-    items: Vec<String>,
     nucleo: Nucleo<String>,
+    highlight_matcher: Matcher,
     state: ListState,
 }
 
@@ -117,14 +118,15 @@ impl ListModel {
         });
 
         Self {
-            items: results,
             nucleo,
             state: ListState::default(),
+            highlight_matcher: Matcher::new(nucleo::Config::DEFAULT),
         }
     }
 
-    fn items(&self) -> &[String] {
-        &self.items
+    fn items(&self) -> Vec<&String> {
+        let items: Vec<_> = self.nucleo.snapshot().matched_items(..).collect();
+        items.into_iter().map(|i| i.data).collect()
     }
 
     fn select_first(&mut self) {
@@ -145,6 +147,73 @@ impl ListModel {
 
     fn snapshot(&self) -> &nucleo::Snapshot<String> {
         self.nucleo.snapshot()
+    }
+
+    fn update_pattern(&mut self, previous_input: &str, input: &str) {
+        self.nucleo.pattern.reparse(
+            0,
+            input,
+            nucleo::pattern::CaseMatching::Smart,
+            nucleo::pattern::Normalization::Smart,
+            input.starts_with(previous_input),
+        );
+    }
+
+    fn list_elements(&mut self) -> Vec<ListItem> {
+        let indicies: Vec<_> = self
+            .nucleo
+            .snapshot()
+            .matched_items(..)
+            .enumerate()
+            .map(|(i, _)| i)
+            .collect();
+        indicies
+            .iter()
+            .map(|i| self.list_element(i.clone() as u32).unwrap())
+            .collect()
+    }
+
+    fn list_element(&mut self, index: u32) -> Result<ListItem<'static>> {
+        let element = &self
+            .nucleo
+            .snapshot()
+            .get_matched_item(index)
+            .ok_or_eyre("Tried to get matched item at an index out of bounds of {index}")
+            .unwrap()
+            .matcher_columns[0];
+        let mut indicies = Vec::new();
+        let _ = self.nucleo.pattern.column_pattern(0).indices(
+            element.slice(..),
+            &mut self.highlight_matcher,
+            &mut indicies,
+        );
+        indicies.sort_unstable();
+        indicies.dedup();
+        let spans = match element {
+            Utf32String::Ascii(element) => element
+                .chars()
+                .enumerate()
+                .map(|(index, c)| {
+                    if indicies.contains(&(index as u32)) {
+                        Span::styled(c.to_string(), Style::default().fg(Color::Red))
+                    } else {
+                        Span::styled(c.to_string(), Style::default())
+                    }
+                })
+                .collect::<Vec<_>>(),
+            Utf32String::Unicode(element) => element
+                .iter()
+                .enumerate()
+                .map(|(index, c)| {
+                    if indicies.contains(&(index as u32)) {
+                        Span::styled(c.to_string(), Style::default().fg(Color::Red))
+                    } else {
+                        Span::styled(c.to_string(), Style::default())
+                    }
+                })
+                .collect::<Vec<_>>(),
+        };
+        Ok(ListItem::new(Line::from_iter(spans.into_iter())))
     }
 }
 
@@ -183,7 +252,13 @@ fn update(model: &mut RepoModel, msg: Message) -> Result<()> {
     match msg {
         Message::Quit => model.running_state = RunningState::Done,
         Message::Input(evt) => {
-            let _ = model.search_bar.handle_event(&evt);
+            let prev = model.search_bar.value().to_string();
+            let changed = model.search_bar.handle_event(&evt);
+            if changed.is_some_and(|c| c.value) {
+                if let SearchState::Done(ref mut list_model) = model.search_state {
+                    list_model.update_pattern(&prev, model.search_bar.value());
+                }
+            }
         }
         Message::StartSearch => start_search(model),
         Message::SearchEnded(results) => {
@@ -237,16 +312,14 @@ fn view(model: &mut RepoModel, frame: &mut Frame) {
 }
 
 fn render_list(frame: &mut Frame, area: Rect, list_model: &mut ListModel) {
-    let elements = list_model
-        .items()
-        .iter()
-        .map(|s| super::padding_str() + s)
-        .collect::<Vec<_>>();
+    let mut state = list_model.state.clone();
+    let elements: Vec<_> = list_model.list_elements();
     let list = List::new(elements)
         .highlight_symbol("▌")
-        .highlight_style(Style::default().bg(Color::Black).fg(Color::Yellow))
+        //.highlight_style(Style::default().bg(Color::Black).fg(Color::Yellow))
+        .repeat_highlight_symbol(true)
         .direction(ListDirection::BottomToTop);
-    frame.render_stateful_widget(list, area, &mut list_model.state);
+    frame.render_stateful_widget(list, area, &mut state);
 }
 
 fn render_item_counter(frame: &mut Frame, area: Rect, list_model: &ListModel) {
