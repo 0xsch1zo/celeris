@@ -27,7 +27,7 @@ impl Manifest {
         let path = utils::config_dir()?.join(Self::MANIFEST_FILE);
         if path.exists() {
             let manifest = fs::read_to_string(path).wrap_err("Couldn't read manifest file")?;
-            Ok(toml::from_str(&manifest).wrap_err("Failed to serialize manifest")?)
+            Ok(toml::from_str(&manifest).wrap_err("Failed to deserialize manifest")?)
         } else {
             Ok(Manifest {
                 entries: Vec::new(),
@@ -44,7 +44,28 @@ impl Manifest {
         Ok(())
     }
 
-    pub fn update_diff(&mut self, repos: &[Repo]) -> Result<()> {
+    pub fn push_unique(&mut self, repo: Repo) -> Result<()> {
+        let new_hash = format!(
+            "{:x}",
+            md5::compute(
+                utils::path_to_string(repo.path.as_path()).wrap_err("Failed to hash path")?,
+            ),
+        );
+        if self.entries.iter().any(|entry| entry.hash == new_hash) {
+            return Ok(());
+        }
+
+        self.entries.push(Entry {
+            hash: new_hash,
+            name: repo.name,
+            path: repo.path,
+        });
+
+        Self::serialize(self)?;
+        Ok(())
+    }
+
+    /*pub fn update_diff(&mut self, repos: &[Repo]) -> Result<()> {
         Ok(self.update(self.diff(repos)?)?)
     }
 
@@ -89,5 +110,5 @@ impl Manifest {
             })
             .collect::<Result<Vec<_>, _>>()?;
         Ok(self.entries.append(&mut entries))
-    }
+    }*/
 }

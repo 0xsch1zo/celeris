@@ -1,6 +1,6 @@
 use color_eyre::eyre::OptionExt;
 use itertools::Itertools;
-use nucleo::{Matcher, Nucleo, Utf32String};
+use nucleo::{Matcher, Nucleo, Utf32Str, Utf32String};
 use ratatui::widgets::ListState;
 use std::sync::Arc;
 
@@ -56,33 +56,36 @@ fn highlight_state(indicies: &Vec<u32>, index: usize) -> HighlightState {
     }
 }
 
-pub struct FuzzyListModel {
-    nucleo: Nucleo<String>,
+pub struct FuzzyListModel<T: Send + Sync + 'static> {
+    nucleo: Nucleo<T>,
     highlight_matcher: Matcher,
     state: ListState,
 }
 
-impl FuzzyListModel {
-    pub fn new(results: Vec<String>) -> Self {
-        let nucleo = Nucleo::<String>::new(nucleo::Config::DEFAULT, Arc::new(|| {}), None, 1);
+pub struct Item<T: Send + Sync + 'static> {
+    pub data: T,
+    pub haystack: Utf32String,
+}
+
+pub struct ItemView<'a, T: Send + Sync + 'static> {
+    pub data: &'a T,
+    pub haystack: Utf32Str<'a>,
+}
+
+impl<T: Send + Sync + 'static> FuzzyListModel<T> {
+    pub fn new(items: Vec<Item<T>>) -> Self {
+        let nucleo = Nucleo::<T>::new(nucleo::Config::DEFAULT, Arc::new(|| {}), None, 1);
         let injector = nucleo.injector();
-        results.iter().for_each(|result| {
-            injector.push(result.to_string(), |s, dst| {
-                dst[0] = Utf32String::from(s as &str)
-            });
+        items.into_iter().for_each(|item| {
+            injector.push(item.data, |_, dst| dst[0] = item.haystack);
         });
 
         Self {
             nucleo,
-            state: ListState::default(),
+            state: ListState::default().with_selected(Some(0)),
             highlight_matcher: Matcher::new(nucleo::Config::DEFAULT),
         }
     }
-
-    /*fn items(&self) -> Vec<&String> {
-        let items: Vec<_> = self.nucleo.snapshot().matched_items(..).collect();
-        items.into_iter().map(|i| i.data).collect()
-    }*/
 
     pub fn state(&self) -> ListState {
         self.state.clone()
@@ -100,11 +103,22 @@ impl FuzzyListModel {
         self.state.select_next();
     }
 
+    pub fn selected(&self) -> Option<ItemView<T>> {
+        let item = self
+            .nucleo
+            .snapshot()
+            .get_matched_item(self.state.selected()? as u32)?;
+        Some(ItemView {
+            haystack: item.matcher_columns[0].slice(..),
+            data: item.data,
+        })
+    }
+
     pub fn tick(&mut self) {
         self.nucleo.tick(10);
     }
 
-    pub fn snapshot(&self) -> &nucleo::Snapshot<String> {
+    pub fn snapshot(&self) -> &nucleo::Snapshot<T> {
         self.nucleo.snapshot()
     }
 

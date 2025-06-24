@@ -1,8 +1,14 @@
 use crate::config::Config;
-use crate::repos::search::search;
-use crate::tui::{PADDING, RunningState, SearchModel, SearchResults};
+use crate::manifest::Manifest;
+use crate::repos::{Repo, search::search};
+use crate::tui::{
+    RunningState, SearchModel,
+    fuzzy_list::{FuzzyListModel, Item},
+};
 use color_eyre::Result;
+use color_eyre::eyre::Context;
 use crossterm::event::{self, Event};
+use nucleo::Utf32String;
 use ratatui::prelude::*;
 use std::cell::RefCell;
 use std::error::Error;
@@ -15,7 +21,10 @@ use throbber_widgets_tui as throbber;
 use tui_input::Input;
 use tui_input::backend::crossterm::EventHandler;
 
+type SearchResults = Result<Vec<Repo>>;
+
 pub struct RepoModel {
+    manifest: Manifest,
     search_bar: Input,
     running_state: RunningState,
     search_state: SearchState,
@@ -27,6 +36,7 @@ impl RepoModel {
 
     pub fn new(config: Config) -> Self {
         Self {
+            manifest: Manifest::new().unwrap(),
             search_bar: Input::new(String::new()),
             running_state: RunningState::Running,
             search_state: SearchState::NotStarted,
@@ -41,7 +51,7 @@ enum SearchState {
         Rc<RefCell<throbber::ThrobberState>>,
         Rc<Receiver<SearchResults>>,
     ),
-    Done(super::FuzzyListModel),
+    Done(FuzzyListModel<Repo>),
 }
 
 enum Message {
@@ -52,11 +62,12 @@ enum Message {
     UpdateThrobber(Rc<RefCell<throbber::ThrobberState>>),
     SelectNext,
     SelectPrev,
+    Selected,
     Quit,
 }
 
 #[derive(Debug)]
-struct StateError(String);
+struct StateError;
 
 impl Display for StateError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -120,16 +131,13 @@ fn handle_key(key: event::KeyEvent) -> Option<Message> {
         return None;
     }
 
-    if key.code.is_up() {
-        return Some(Message::SelectNext);
-    } else if key.code.is_down() {
-        return Some(Message::SelectPrev);
-    }
-
     match key.code {
         event::KeyCode::Char('c') if key.modifiers.contains(event::KeyModifiers::CONTROL) => {
             Some(Message::Quit)
         }
+        event::KeyCode::Up => Some(Message::SelectNext),
+        event::KeyCode::Down => Some(Message::SelectPrev),
+        event::KeyCode::Enter => Some(Message::Selected),
         _ => Some(Message::Input(Event::Key(key))),
     }
 }
@@ -148,9 +156,14 @@ fn update(model: &mut RepoModel, msg: Message) -> Result<()> {
         }
         Message::StartSearch => start_search(model),
         Message::SearchEnded(results) => {
-            let mut list_model = super::FuzzyListModel::new(results?);
-            list_model.select_first();
-            model.search_state = SearchState::Done(list_model);
+            let items = results?
+                .into_iter()
+                .map(|result| Item::<Repo> {
+                    haystack: Utf32String::from(result.name.clone()),
+                    data: result,
+                })
+                .collect();
+            model.search_state = SearchState::Done(FuzzyListModel::new(items));
         }
         Message::UpdateThrobber(throbber_state) => {
             throbber_state.borrow_mut().calc_next();
@@ -159,7 +172,7 @@ fn update(model: &mut RepoModel, msg: Message) -> Result<()> {
             if let SearchState::Done(ref mut list_model) = model.search_state {
                 list_model.tick();
             } else {
-                return Err(StateError(String::from("tick called when search is not done")).into());
+                return Err(StateError).wrap_err("tick called when search is not done");
             }
         }
         Message::SelectPrev => {
@@ -170,6 +183,14 @@ fn update(model: &mut RepoModel, msg: Message) -> Result<()> {
         Message::SelectNext => {
             if let SearchState::Done(ref mut list_model) = model.search_state {
                 list_model.select_next();
+            }
+        }
+        Message::Selected => {
+            if let SearchState::Done(ref list_model) = model.search_state {
+                match list_model.selected() {
+                    Some(item) => model.manifest.push_unique(item.data.clone()).unwrap(),
+                    _ => {}
+                }
             }
         }
     };
@@ -205,8 +226,7 @@ fn layout() -> Layout {
 fn fetch_results(tx: Sender<SearchResults>, config: &Config) {
     let _ = search(&config)
         .and_then(|repos| {
-            let sessions: Vec<_> = repos.into_iter().map(|repo| repo.name).collect();
-            tx.send(Ok(sessions))
+            tx.send(Ok(repos))
                 .unwrap_or_else(|e| panic!("failed to send search results: {e}"));
             Ok(())
         })

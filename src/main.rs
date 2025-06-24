@@ -1,8 +1,6 @@
 use color_eyre::Result;
 use sesh::config::Config;
 use sesh::manifest::Manifest;
-use sesh::repos::Repo;
-use sesh::repos::search::search;
 use sesh::tui::picker;
 use sesh::tui::repo_search::RepoModel;
 

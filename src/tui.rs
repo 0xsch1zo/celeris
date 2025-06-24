@@ -13,12 +13,8 @@ use ratatui::{
 use throbber_widgets_tui as throbber;
 use tui_input::Input;
 
-use crate::tui::fuzzy_list::{ItemHighlight, ItemHighlights};
-
-type SearchResults = Result<Vec<String>>;
-
 // Abstraction over RepoModel and SessionModel
-trait SearchModel {
+pub trait SearchModel {
     fn main_loop<T: Backend>(self, term: &mut Terminal<T>) -> Result<()>;
     fn search_bar(&self) -> &Input;
 }
@@ -57,7 +53,11 @@ fn render_input<T: SearchModel>(model: &T, frame: &mut Frame, area: Rect) {
     frame.set_cursor_position((area.x + x as u16, area.y + 1))
 }
 
-fn render_list(frame: &mut Frame, area: Rect, list_model: &mut FuzzyListModel) {
+fn render_list<T: Send + Sync + 'static>(
+    frame: &mut Frame,
+    area: Rect,
+    list_model: &mut FuzzyListModel<T>,
+) {
     let mut state = list_model.state().clone();
     let elements =
         list_model
@@ -70,7 +70,9 @@ fn render_list(frame: &mut Frame, area: Rect, list_model: &mut FuzzyListModel) {
                     .map(|highlight| match highlight.highlight_state {
                         HighlightState::Highlighted => Span::styled(
                             highlight.text,
-                            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                            Style::default()
+                                .fg(Color::Magenta)
+                                .add_modifier(Modifier::BOLD),
                         ),
                         HighlightState::NotHighlighted
                             if state.selected().is_some() && index == state.selected().unwrap() =>
@@ -78,7 +80,7 @@ fn render_list(frame: &mut Frame, area: Rect, list_model: &mut FuzzyListModel) {
                             Span::styled(
                                 highlight.text,
                                 Style::default()
-                                    .fg(Color::Yellow)
+                                    .fg(Color::Cyan)
                                     .add_modifier(Modifier::BOLD),
                             )
                         }
@@ -98,7 +100,11 @@ fn render_list(frame: &mut Frame, area: Rect, list_model: &mut FuzzyListModel) {
     frame.render_stateful_widget(list, area, &mut state);
 }
 
-fn render_item_counter(frame: &mut Frame, area: Rect, list_model: &FuzzyListModel) {
+fn render_item_counter<T: Send + Sync + 'static>(
+    frame: &mut Frame,
+    area: Rect,
+    list_model: &FuzzyListModel<T>,
+) {
     let snap = list_model.snapshot();
     let item_counter = Line::from(format!(
         "{}{}/{}",
