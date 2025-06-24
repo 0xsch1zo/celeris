@@ -2,11 +2,9 @@ use crate::config::Config;
 use crate::repos::search::search;
 use crate::tui::{PADDING, RunningState, SearchModel, SearchResults};
 use color_eyre::Result;
-use color_eyre::eyre::OptionExt;
 use crossterm::event::{self, Event};
-use nucleo::{Matcher, Nucleo, Utf32String};
 use ratatui::prelude::*;
-use ratatui::widgets::{List, ListDirection, ListItem, ListState};
+use std::cell::RefCell;
 use std::error::Error;
 use std::fmt::Display;
 use std::rc::Rc;
@@ -39,16 +37,19 @@ impl RepoModel {
 
 enum SearchState {
     NotStarted,
-    Running(throbber::ThrobberState, Rc<Receiver<SearchResults>>),
-    Done(ListModel),
+    Running(
+        Rc<RefCell<throbber::ThrobberState>>,
+        Rc<Receiver<SearchResults>>,
+    ),
+    Done(super::FuzzyListModel),
 }
 
 enum Message {
     Input(event::Event),
-    Tick,
+    NucleoTick,
     StartSearch,
     SearchEnded(SearchResults),
-    UpdateThrobber,
+    UpdateThrobber(Rc<RefCell<throbber::ThrobberState>>),
     SelectNext,
     SelectPrev,
     Quit,
@@ -80,17 +81,18 @@ impl SearchModel for RepoModel {
                 update(&mut self, msg)?;
             }
 
-            if let SearchState::Running(_, ref rx) = self.search_state {
+            if let SearchState::Running(ref throbber_state, ref rx) = self.search_state {
                 match rx.try_recv() {
                     Ok(r) => update(&mut self, Message::SearchEnded(r))?,
                     Err(_) => {
-                        update(&mut self, Message::UpdateThrobber)?;
+                        let throbber_state = Rc::clone(throbber_state);
+                        update(&mut self, Message::UpdateThrobber(throbber_state))?;
                     }
                 }
             }
 
             if let SearchState::Done(_) = self.search_state {
-                update(&mut self, Message::Tick)?
+                update(&mut self, Message::NucleoTick)?
             }
         }
         Ok(())
@@ -98,122 +100,6 @@ impl SearchModel for RepoModel {
 
     fn search_bar(&self) -> &Input {
         &self.search_bar
-    }
-}
-
-struct ListModel {
-    nucleo: Nucleo<String>,
-    highlight_matcher: Matcher,
-    state: ListState,
-}
-
-impl ListModel {
-    fn new(results: Vec<String>) -> Self {
-        let nucleo = Nucleo::<String>::new(nucleo::Config::DEFAULT, Arc::new(|| {}), None, 1);
-        let injector = nucleo.injector();
-        results.iter().for_each(|result| {
-            injector.push(result.to_string(), |s, dst| {
-                dst[0] = Utf32String::from(s as &str)
-            });
-        });
-
-        Self {
-            nucleo,
-            state: ListState::default(),
-            highlight_matcher: Matcher::new(nucleo::Config::DEFAULT),
-        }
-    }
-
-    fn items(&self) -> Vec<&String> {
-        let items: Vec<_> = self.nucleo.snapshot().matched_items(..).collect();
-        items.into_iter().map(|i| i.data).collect()
-    }
-
-    fn select_first(&mut self) {
-        self.state.select_first();
-    }
-
-    fn select_prev(&mut self) {
-        self.state.select_previous();
-    }
-
-    fn select_next(&mut self) {
-        self.state.select_next();
-    }
-
-    fn tick(&mut self) {
-        self.nucleo.tick(10);
-    }
-
-    fn snapshot(&self) -> &nucleo::Snapshot<String> {
-        self.nucleo.snapshot()
-    }
-
-    fn update_pattern(&mut self, previous_input: &str, input: &str) {
-        self.nucleo.pattern.reparse(
-            0,
-            input,
-            nucleo::pattern::CaseMatching::Smart,
-            nucleo::pattern::Normalization::Smart,
-            input.starts_with(previous_input),
-        );
-    }
-
-    fn list_elements(&mut self) -> Vec<ListItem> {
-        let indicies: Vec<_> = self
-            .nucleo
-            .snapshot()
-            .matched_items(..)
-            .enumerate()
-            .map(|(i, _)| i)
-            .collect();
-        indicies
-            .iter()
-            .map(|i| self.list_element(i.clone() as u32).unwrap())
-            .collect()
-    }
-
-    fn list_element(&mut self, index: u32) -> Result<ListItem<'static>> {
-        let element = &self
-            .nucleo
-            .snapshot()
-            .get_matched_item(index)
-            .ok_or_eyre("Tried to get matched item at an index out of bounds of {index}")
-            .unwrap()
-            .matcher_columns[0];
-        let mut indicies = Vec::new();
-        let _ = self.nucleo.pattern.column_pattern(0).indices(
-            element.slice(..),
-            &mut self.highlight_matcher,
-            &mut indicies,
-        );
-        indicies.sort_unstable();
-        indicies.dedup();
-        let spans = match element {
-            Utf32String::Ascii(element) => element
-                .chars()
-                .enumerate()
-                .map(|(index, c)| {
-                    if indicies.contains(&(index as u32)) {
-                        Span::styled(c.to_string(), Style::default().fg(Color::Red))
-                    } else {
-                        Span::styled(c.to_string(), Style::default())
-                    }
-                })
-                .collect::<Vec<_>>(),
-            Utf32String::Unicode(element) => element
-                .iter()
-                .enumerate()
-                .map(|(index, c)| {
-                    if indicies.contains(&(index as u32)) {
-                        Span::styled(c.to_string(), Style::default().fg(Color::Red))
-                    } else {
-                        Span::styled(c.to_string(), Style::default())
-                    }
-                })
-                .collect::<Vec<_>>(),
-        };
-        Ok(ListItem::new(Line::from_iter(spans.into_iter())))
     }
 }
 
@@ -262,21 +148,14 @@ fn update(model: &mut RepoModel, msg: Message) -> Result<()> {
         }
         Message::StartSearch => start_search(model),
         Message::SearchEnded(results) => {
-            let mut list_model = ListModel::new(results?);
+            let mut list_model = super::FuzzyListModel::new(results?);
             list_model.select_first();
             model.search_state = SearchState::Done(list_model);
         }
-        Message::UpdateThrobber => {
-            if let SearchState::Running(ref mut throbber_state, _) = model.search_state {
-                throbber_state.calc_next();
-            } else {
-                return Err(StateError(String::from(
-                    "got message to update throbber when the search is not running",
-                ))
-                .into());
-            }
+        Message::UpdateThrobber(throbber_state) => {
+            throbber_state.borrow_mut().calc_next();
         }
-        Message::Tick => {
+        Message::NucleoTick => {
             if let SearchState::Done(ref mut list_model) = model.search_state {
                 list_model.tick();
             } else {
@@ -301,46 +180,16 @@ fn view(model: &mut RepoModel, frame: &mut Frame) {
     let layout = layout().split(frame.area());
 
     match model.search_state {
-        SearchState::Running(ref mut state, _) => render_throbber(frame, layout[1], state),
+        SearchState::Running(ref state, _) => {
+            super::render_throbber(frame, layout[1], &mut state.borrow_mut())
+        }
         SearchState::Done(ref mut list_model) => {
-            render_list(frame, layout[0], list_model);
-            render_item_counter(frame, layout[1], list_model)
+            super::render_list(frame, layout[0], list_model);
+            super::render_item_counter(frame, layout[1], list_model)
         }
         _ => {}
     };
     super::render_input(model, frame, layout[2]);
-}
-
-fn render_list(frame: &mut Frame, area: Rect, list_model: &mut ListModel) {
-    let mut state = list_model.state.clone();
-    let elements: Vec<_> = list_model.list_elements();
-    let list = List::new(elements)
-        .highlight_symbol("▌")
-        //.highlight_style(Style::default().bg(Color::Black).fg(Color::Yellow))
-        .repeat_highlight_symbol(true)
-        .direction(ListDirection::BottomToTop);
-    frame.render_stateful_widget(list, area, &mut state);
-}
-
-fn render_item_counter(frame: &mut Frame, area: Rect, list_model: &ListModel) {
-    let snap = list_model.snapshot();
-    let item_counter = Line::from(format!(
-        "{}{}/{}",
-        super::padding_str(),
-        snap.matched_item_count(),
-        snap.item_count(),
-    ));
-    frame.render_widget(item_counter, area);
-}
-
-fn render_throbber(frame: &mut Frame, area: Rect, state: &mut throbber::ThrobberState) {
-    let throbber = throbber::Throbber::default()
-        .label("Searching...")
-        .style(ratatui::style::Style::default().add_modifier(Modifier::BOLD))
-        .throbber_style(Style::default().fg(Color::Green))
-        .throbber_set(throbber::BRAILLE_SIX)
-        .use_type(throbber::WhichUse::Spin);
-    frame.render_stateful_widget(throbber, area, state);
 }
 
 fn layout() -> Layout {
@@ -374,5 +223,8 @@ fn start_search(model: &mut RepoModel) {
     let (tx, rx) = mpsc::channel::<SearchResults>();
     let config = model.config.clone();
     thread::spawn(move || fetch_results(tx, &config));
-    model.search_state = SearchState::Running(throbber::ThrobberState::default(), Rc::new(rx));
+    model.search_state = SearchState::Running(
+        Rc::new(RefCell::new(throbber::ThrobberState::default())),
+        Rc::new(rx),
+    );
 }

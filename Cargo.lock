@@ -1640,6 +1640,7 @@ dependencies = [
  "crossterm 0.29.0",
  "dirs",
  "git2",
+ "itertools 0.14.0",
  "md5",
  "nucleo",
  "ratatui 0.29.0",
