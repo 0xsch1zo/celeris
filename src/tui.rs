@@ -13,6 +13,8 @@ use ratatui::{
 use throbber_widgets_tui as throbber;
 use tui_input::Input;
 
+// TODO: don't use panics in here
+
 // Abstraction over RepoModel and SessionModel
 pub trait SearchModel {
     fn main_loop<T: Backend>(self, term: &mut Terminal<T>) -> Result<()>;
