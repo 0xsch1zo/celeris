@@ -1,12 +1,11 @@
-use color_eyre::section::PanicMessage;
 use color_eyre::{Result, eyre::Context, eyre::eyre};
 use std::cell::{Ref, RefCell};
 use std::process;
 use std::process::Stdio;
 use std::rc::Rc;
 use std::str;
-use std::thread::current;
 
+// TODO: gaslight the user
 // Maybe leave this thing procedural and make a higher level object oriented abstraction
 
 // TODO: provide a custom tmux command builder for special cases
@@ -32,7 +31,6 @@ fn execute(mut command: process::Command) -> Result<String> {
 }
 
 fn tmux_target_command(target: &str, command: &str) -> Result<process::Command> {
-    //let target = format!("{}:{}.{}", self.session_id, window_id, pane_id);
     let has_session_status = tmux()
         .args(["has-session", "-t", &target])
         .stderr(Stdio::null())
@@ -58,17 +56,37 @@ pub enum SplitSize {
 }
 
 // TODO: split into window and session components
-pub struct Session<'a> {
+pub struct Session {
     session_id: String,
-    windows: RefCell<Vec<Window<'a>>>,
+    window_count: RefCell<usize>,
+    default_window_id: String,
 }
 
-impl<'a> Session<'a> {
-    pub fn new(session_id: String) -> Self {
-        Self {
+impl Session {
+    pub fn new(session_id: String) -> Result<Rc<Self>> {
+        let mut command = tmux();
+        // need to use low level api
+        command.args([
+            "new-session",
+            "-d",
+            "-s",
+            &session_id,
+            "-P",
+            "-F",
+            "#{window_index}",
+        ]);
+        let output = execute(command)?;
+
+        let default_window_id: u32 = output
+            .trim()
+            .parse()
+            .wrap_err("failed to parse default window id: {output}")?;
+
+        Ok(Rc::new(Self {
             session_id: session_id,
-            windows: RefCell::new(Vec::new()),
-        }
+            window_count: RefCell::new(0),
+            default_window_id: default_window_id.to_string(),
+        }))
     }
 
     // TODO: Maybe replace with an enum
@@ -77,33 +95,35 @@ impl<'a> Session<'a> {
         tmux_target_command(&target, command)
     }
 
-    pub fn windows(&self) -> Ref<Vec<Window<'a>>> {
-        self.windows.borrow()
-    }
-
-    pub fn new_window(&'a self, name: Option<&str>, shell_command: Option<&str>) -> Result<()> {
-        self.windows
-            .borrow_mut()
-            .push(Window::new(&self, name, shell_command)?);
-        Ok(())
+    pub fn new_window(
+        self: &Rc<Self>,
+        name: Option<&str>,
+        shell_command: Option<&str>,
+    ) -> Result<Rc<Window>> {
+        let window = Window::new(Rc::clone(self), name, shell_command)?;
+        if *self.window_count.borrow() == 0 {
+            window.move_kill(&self.default_window_id)?;
+        }
+        *self.window_count.borrow_mut() += 1;
+        Ok(window)
     }
 }
 
-pub struct Window<'a> {
-    session: &'a Session<'a>,
+pub struct Window {
+    session: Rc<Session>,
     window_id: String,
-    panes: RefCell<Vec<Pane<'a>>>,
+    panes: RefCell<Vec<Pane>>,
 }
 
-impl<'a> Window<'a> {
+impl Window {
     // Overloads will be set while initializing the rhai engine
     // Can't do builder pattern because the command needs to be executed at the end of
     // construction. To have the caller call a fininalizing function would be to much responsibility to the caller
     fn new(
-        session: &'a Session<'a>,
+        session: Rc<Session>,
         name: Option<&str>,
         shell_command: Option<&str>,
-    ) -> Result<Self> {
+    ) -> Result<Rc<Self>> {
         let mut command = session.target("new-window")?;
         command.args(["-P", "-F", "#{window_index}"]);
 
@@ -121,22 +141,17 @@ impl<'a> Window<'a> {
             .parse()
             .wrap_err("faield to parse tmux window id")?;
 
-        if let Some(_) = name {
-            let window = Self {
-                session: session,
-                //window_id: name.to_string(),
-                window_id: id.to_string(),
-                panes: RefCell::new(Vec::new()),
-            };
-            window.set_option("allow-rename", "off")?;
-            return Ok(window);
-        }
-
-        Ok(Self {
-            session: &session,
+        let window = Self {
+            session: session,
             window_id: id.to_string(),
             panes: RefCell::new(Vec::new()),
-        })
+        };
+
+        if let Some(_) = name {
+            window.set_option("allow-rename", "off")?;
+        }
+
+        Ok(Rc::new(window))
     }
 
     fn target(&self, command: &str) -> Result<process::Command> {
@@ -166,22 +181,30 @@ impl<'a> Window<'a> {
         Ok(())
     }
 
-    fn new_pane(&self, pane: Pane<'a>) {
+    fn new_pane(&self, pane: Pane) {
         self.panes.borrow_mut().push(pane);
     }
 
-    pub fn panes(&self) -> Ref<Vec<Pane<'a>>> {
+    pub fn panes(&self) -> Ref<Vec<Pane>> {
         self.panes.borrow()
+    }
+
+    fn move_kill(&self, target: &str) -> Result<()> {
+        let mut command = self.target("move-window")?;
+        // use a proper source target
+        command.args(["-s", &self.window_id, "-t", target, "-k"]);
+        execute(command)?;
+        Ok(())
     }
 }
 
-pub struct Pane<'a> {
+pub struct Pane {
     pane_id: String,
-    window: &'a Window<'a>,
+    window: Rc<Window>,
 }
 
-impl<'a> Pane<'a> {
-    fn new(window: &'a Window<'a>, pane_id: &str) -> Self {
+impl Pane {
+    fn new(window: Rc<Window>, pane_id: &str) -> Self {
         Self {
             pane_id: pane_id.to_string(),
             window,
@@ -211,7 +234,7 @@ impl<'a> Pane<'a> {
         let output = execute(self.split_command(split)?)?;
         let id: u32 = output.trim().parse()?;
         self.window
-            .new_pane(Pane::new(self.window, &id.to_string()));
+            .new_pane(Pane::new(Rc::clone(&self.window), &id.to_string()));
         Ok(())
     }
 
@@ -231,7 +254,7 @@ impl<'a> Pane<'a> {
         let output = execute(command)?;
         let id: u32 = output.trim().parse()?;
         self.window
-            .new_pane(Pane::new(self.window, &id.to_string()));
+            .new_pane(Pane::new(Rc::clone(&self.window), &id.to_string()));
 
         Ok(())
     }
