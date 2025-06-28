@@ -1,10 +1,9 @@
 use color_eyre::eyre::OptionExt;
 use color_eyre::{Result, eyre::Context, eyre::eyre};
-use std::cell::RefCell;
 use std::process;
 use std::process::Stdio;
-use std::rc::Rc;
 use std::str;
+use std::sync::{Arc, Mutex};
 
 // TODO: provide a custom tmux command builder for special cases
 // TODO: handle tmux not being available
@@ -53,14 +52,15 @@ pub enum SplitSize {
     Fixed(u32),
 }
 
+#[derive(Clone, Debug)]
 pub struct Session {
     session_id: String,
-    window_count: RefCell<usize>,
+    window_count: Arc<Mutex<usize>>,
     default_window_id: String,
 }
 
 impl Session {
-    pub fn new(session_name: String) -> Result<Rc<Self>> {
+    pub fn new(session_name: String) -> Result<Arc<Self>> {
         const DELIM: &str = "|";
         let mut command = tmux();
         // need to use low level api
@@ -80,9 +80,9 @@ impl Session {
                 output
             ))?;
 
-        Ok(Rc::new(Self {
+        Ok(Arc::new(Self {
             session_id: session_id.to_string(),
-            window_count: RefCell::new(0),
+            window_count: Arc::new(Mutex::new(0)),
             default_window_id: default_window_id.to_string(),
         }))
     }
@@ -94,22 +94,24 @@ impl Session {
     }
 
     pub fn new_window(
-        self: &Rc<Self>,
+        self: &Arc<Self>,
         name: Option<&str>,
         shell_command: Option<&str>,
-    ) -> Result<Rc<Window>> {
-        let window_core = WindowCore::new(Rc::clone(self), name, shell_command)?;
-        if *self.window_count.borrow() == 0 {
+    ) -> Result<Arc<Window>> {
+        let window_core = WindowCore::new(Arc::clone(self), name, shell_command)?;
+        let mut count = self.window_count.lock().unwrap();
+        if *count == 0 {
             let target = format!("{}:{}", self.session_id, self.default_window_id);
             window_core.move_kill(&target)?;
         }
-        *self.window_count.borrow_mut() += 1;
+        *count += 1;
         Ok(Window::new(window_core))
     }
 }
 
+#[derive(Clone, Debug)]
 struct WindowCore {
-    session: Rc<Session>,
+    session: Arc<Session>,
     window_id: String,
     default_pane_id: String,
 }
@@ -118,7 +120,7 @@ impl WindowCore {
     // Overloads will be set while initializing the rhai engine
     // Can't do builder pattern because the command needs to be executed at the end of
     // construction. To have the caller call a fininalizing function would be to much responsibility to the caller
-    fn new(session: Rc<Session>, name: Option<&str>, shell_command: Option<&str>) -> Result<Self> {
+    fn new(session: Arc<Session>, name: Option<&str>, shell_command: Option<&str>) -> Result<Self> {
         const DELIM: &str = "|";
         let mut command = session.target("new-window")?;
         command.args([
@@ -193,16 +195,17 @@ impl WindowCore {
 // all this is because I have a skill issue and in the architecture there is an inherent dependency
 // cycle between the default pane and window. Couldn't think of a way to have a clear api without
 // this
+#[derive(Clone, Debug)]
 pub struct Window {
-    window_core: Rc<WindowCore>,
+    window_core: Arc<WindowCore>,
     default_pane: Pane,
 }
 
 impl Window {
-    fn new(window_core: WindowCore) -> Rc<Self> {
-        let window_core = Rc::new(window_core);
-        Rc::new(Self {
-            window_core: Rc::clone(&window_core),
+    fn new(window_core: WindowCore) -> Arc<Self> {
+        let window_core = Arc::new(window_core);
+        Arc::new(Self {
+            window_core: Arc::clone(&window_core),
             default_pane: Pane::new(&window_core, &window_core.default_pane_id),
         })
     }
@@ -220,16 +223,17 @@ impl Window {
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct Pane {
     pane_id: String,
-    window: Rc<WindowCore>,
+    window: Arc<WindowCore>,
 }
 
 impl Pane {
-    fn new(window: &Rc<WindowCore>, pane_id: &str) -> Self {
+    fn new(window: &Arc<WindowCore>, pane_id: &str) -> Self {
         Self {
             pane_id: pane_id.to_string(),
-            window: Rc::clone(window),
+            window: Arc::clone(window),
         }
     }
 
