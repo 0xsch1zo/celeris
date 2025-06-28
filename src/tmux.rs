@@ -1,12 +1,10 @@
+use color_eyre::eyre::OptionExt;
 use color_eyre::{Result, eyre::Context, eyre::eyre};
-use std::cell::{Ref, RefCell};
+use std::cell::RefCell;
 use std::process;
 use std::process::Stdio;
 use std::rc::Rc;
 use std::str;
-
-// TODO: gaslight the user
-// Maybe leave this thing procedural and make a higher level object oriented abstraction
 
 // TODO: provide a custom tmux command builder for special cases
 // TODO: handle tmux not being available
@@ -55,7 +53,6 @@ pub enum SplitSize {
     Fixed(u32),
 }
 
-// TODO: split into window and session components
 pub struct Session {
     session_id: String,
     window_count: RefCell<usize>,
@@ -63,27 +60,28 @@ pub struct Session {
 }
 
 impl Session {
-    pub fn new(session_id: String) -> Result<Rc<Self>> {
+    pub fn new(session_name: String) -> Result<Rc<Self>> {
+        const DELIM: &str = "|";
         let mut command = tmux();
         // need to use low level api
         command.args([
             "new-session",
             "-d",
             "-s",
-            &session_id,
+            &session_name,
             "-P",
             "-F",
-            "#{window_index}",
+            &format!("{}{}{}", "#{window_id}", DELIM, "#{session_id}"),
         ]);
         let output = execute(command)?;
-
-        let default_window_id: u32 = output
-            .trim()
-            .parse()
-            .wrap_err("failed to parse default window id: {output}")?;
+        let (default_window_id, session_id) =
+            output.trim().split_once(DELIM).ok_or_eyre(format!(
+                "failed to create session, couldn't parse session or window id: {}",
+                output
+            ))?;
 
         Ok(Rc::new(Self {
-            session_id: session_id,
+            session_id: session_id.to_string(),
             window_count: RefCell::new(0),
             default_window_id: default_window_id.to_string(),
         }))
@@ -100,34 +98,35 @@ impl Session {
         name: Option<&str>,
         shell_command: Option<&str>,
     ) -> Result<Rc<Window>> {
-        let window = Window::new(Rc::clone(self), name, shell_command)?;
+        let window_core = WindowCore::new(Rc::clone(self), name, shell_command)?;
         if *self.window_count.borrow() == 0 {
-            window.move_kill(&self.default_window_id)?;
+            let target = format!("{}:{}", self.session_id, self.default_window_id);
+            window_core.move_kill(&target)?;
         }
         *self.window_count.borrow_mut() += 1;
-        Ok(window)
+        Ok(Window::new(window_core))
     }
 }
 
-pub struct Window {
+struct WindowCore {
     session: Rc<Session>,
     window_id: String,
-    panes: RefCell<Vec<Pane>>,
+    default_pane_id: String,
 }
 
-impl Window {
+impl WindowCore {
     // Overloads will be set while initializing the rhai engine
     // Can't do builder pattern because the command needs to be executed at the end of
     // construction. To have the caller call a fininalizing function would be to much responsibility to the caller
-    fn new(
-        session: Rc<Session>,
-        name: Option<&str>,
-        shell_command: Option<&str>,
-    ) -> Result<Rc<Self>> {
+    fn new(session: Rc<Session>, name: Option<&str>, shell_command: Option<&str>) -> Result<Self> {
+        const DELIM: &str = "|";
         let mut command = session.target("new-window")?;
-        command.args(["-P", "-F", "#{window_index}"]);
+        command.args([
+            "-P",
+            "-F",
+            &format!("{}{}{}", "#{pane_id}", DELIM, "#{windowd-id}"),
+        ]);
 
-        // TODO: disable name changes for named windows
         if let Some(name) = name {
             command.args(["-n", name]);
         }
@@ -136,22 +135,22 @@ impl Window {
         }
 
         let output = execute(command)?;
-        let id: u32 = output
-            .trim()
-            .parse()
-            .wrap_err("faield to parse tmux window id")?;
+        let (default_pane_id, window_id) = output.trim().split_once(DELIM).ok_or_eyre(format!(
+            "failed to create session, couldn't parse session or window id: {}",
+            output
+        ))?;
 
         let window = Self {
             session: session,
-            window_id: id.to_string(),
-            panes: RefCell::new(Vec::new()),
+            window_id: window_id.to_string(),
+            default_pane_id: default_pane_id.to_string(),
         };
 
         if let Some(_) = name {
             window.set_option("allow-rename", "off")?;
         }
 
-        Ok(Rc::new(window))
+        Ok(window)
     }
 
     fn target(&self, command: &str) -> Result<process::Command> {
@@ -166,12 +165,12 @@ impl Window {
         Ok(())
     }
 
-    pub fn select(&self) -> Result<()> {
+    fn select(&self) -> Result<()> {
         execute(self.target("select-window")?)?;
         Ok(())
     }
 
-    pub fn even_out(&self, direction: Direction) -> Result<()> {
+    fn even_out(&self, direction: Direction) -> Result<()> {
         let mut command = self.target("select-layout")?;
         match direction {
             Direction::Vertical => command.arg("even-vertical"),
@@ -181,14 +180,7 @@ impl Window {
         Ok(())
     }
 
-    fn new_pane(&self, pane: Pane) {
-        self.panes.borrow_mut().push(pane);
-    }
-
-    pub fn panes(&self) -> Ref<Vec<Pane>> {
-        self.panes.borrow()
-    }
-
+    // Only for the purpose of killing the default window
     fn move_kill(&self, target: &str) -> Result<()> {
         let mut command = self.target("move-window")?;
         // use a proper source target
@@ -198,16 +190,46 @@ impl Window {
     }
 }
 
+// all this is because I have a skill issue and in the architecture there is an inherent dependency
+// cycle between the default pane and window. Couldn't think of a way to have a clear api without
+// this
+pub struct Window {
+    window_core: Rc<WindowCore>,
+    default_pane: Pane,
+}
+
+impl Window {
+    fn new(window_core: WindowCore) -> Rc<Self> {
+        let window_core = Rc::new(window_core);
+        Rc::new(Self {
+            window_core: Rc::clone(&window_core),
+            default_pane: Pane::new(&window_core, &window_core.default_pane_id),
+        })
+    }
+
+    pub fn default_pane(&self) -> &Pane {
+        &self.default_pane
+    }
+
+    pub fn event_out(&self, direction: Direction) -> Result<()> {
+        self.window_core.even_out(direction)
+    }
+
+    pub fn select(&self) -> Result<()> {
+        self.window_core.select()
+    }
+}
+
 pub struct Pane {
     pane_id: String,
-    window: Rc<Window>,
+    window: Rc<WindowCore>,
 }
 
 impl Pane {
-    fn new(window: Rc<Window>, pane_id: &str) -> Self {
+    fn new(window: &Rc<WindowCore>, pane_id: &str) -> Self {
         Self {
             pane_id: pane_id.to_string(),
-            window,
+            window: Rc::clone(window),
         }
     }
 
@@ -221,7 +243,7 @@ impl Pane {
 
     fn split_command(&self, split: Direction) -> Result<process::Command> {
         let mut command = self.target("split-window")?;
-        command.args(["-P", "-F", "#{pane_index}"]);
+        command.args(["-P", "-F", "#{pane_id}"]);
         match split {
             Direction::Vertical => command.arg("-v"),
             Direction::Horizontal => command.arg("-h"),
@@ -230,16 +252,13 @@ impl Pane {
         Ok(command)
     }
 
-    pub fn split(&self, split: Direction) -> Result<()> {
+    pub fn split(&self, split: Direction) -> Result<Pane> {
         let output = execute(self.split_command(split)?)?;
-        let id: u32 = output.trim().parse()?;
-        self.window
-            .new_pane(Pane::new(Rc::clone(&self.window), &id.to_string()));
-        Ok(())
+        Ok(Pane::new(&self.window, output.trim()))
     }
 
     // TODO: maybe add support for below 3.1
-    pub fn split_with_size(&self, split: Direction, size: SplitSize) -> Result<()> {
+    pub fn split_with_size(&self, split: Direction, size: SplitSize) -> Result<Pane> {
         let mut command = self.split_command(split)?;
         match size {
             SplitSize::Percentage(percentage) if percentage <= 100 => {
@@ -252,11 +271,7 @@ impl Pane {
         };
 
         let output = execute(command)?;
-        let id: u32 = output.trim().parse()?;
-        self.window
-            .new_pane(Pane::new(Rc::clone(&self.window), &id.to_string()));
-
-        Ok(())
+        Ok(Pane::new(&self.window, output.trim()))
     }
 
     pub fn select(&self) -> Result<()> {

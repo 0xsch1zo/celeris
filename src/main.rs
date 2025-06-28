@@ -15,9 +15,16 @@ fn main() -> Result<()> {
     //manifest.serialize()?;
 
     //picker(RepoModel::new(config))?;
-    let session = Session::new(String::from("20"))?;
-    let window = session.new_window(Some("test"), None)?;
-    window.even_out(Direction::Vertical)?;
+    let session = Session::new(String::from("test"))?;
+    let nvim = session.new_window(Some("neovim"), None)?;
+    nvim.default_pane().run_command("nvim")?;
+
+    let build = session.new_window(Some("build"), None)?;
+    build.default_pane().run_command("echo hello")?;
+
+    let tests = build.default_pane().split(Direction::Horizontal)?;
+    tests.run_command("cargo test")?;
+    //window.even_out(Direction::Vertical)?;
     //session.windows()[0].panes()[0].run_command("echo deeez nuts");
     //t.split_window("3", Split::Vertical)?;
     //t.run_command("3", "1", "ls")?;
