@@ -518,7 +518,20 @@ mod tests {
         fn run_command() -> Result<()> {
             let session = testing_session()?;
             let window = session.new_window(None, None)?;
-            window.default_pane().run_command("echo test")?;
+            //should run until Ctrl+C or the session is killled. Will work
+            // only on most systems. Testing this without getting execution
+            // is probably impossible
+            let real_command = "cat";
+            let command = format!("'{real_command}'"); // to ignore aliases
+            let pane = window.default_pane();
+            pane.run_command(&command)?;
+            // Yes the shell is sometimes this slow
+            std::thread::sleep(std::time::Duration::from_secs(1));
+            let mut get_running_command = pane.target("display-message")?;
+            get_running_command.args(["-p", "#{pane_current_command}"]);
+
+            let output = execute(get_running_command)?;
+            assert_eq!(output.trim(), real_command);
             Ok(())
         }
     }
