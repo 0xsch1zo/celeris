@@ -17,4 +17,4 @@ tui-input = "0.12.1"
 md5 = "0.7.0"
 throbber-widgets-tui = "0.8.0"
 itertools = "0.14.0"
-rhai = "1.22.2"
+rhai = { version = "1.22.2", features = ["sync"] }

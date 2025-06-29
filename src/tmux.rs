@@ -1,5 +1,8 @@
-use color_eyre::eyre::OptionExt;
-use color_eyre::{Result, eyre::Context, eyre::eyre};
+use color_eyre::{
+    Result,
+    eyre::Context,
+    eyre::{OptionExt, eyre},
+};
 use std::process;
 use std::process::Stdio;
 use std::str;
@@ -42,11 +45,13 @@ fn tmux_target_command(target: &str, command: &str) -> Result<process::Command> 
     Ok(tmux)
 }
 
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub enum Direction {
     Horizontal,
     Vertical,
 }
 
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub enum SplitSize {
     Percentage(u8),
     Fixed(u32),
@@ -60,7 +65,8 @@ pub struct Session {
 }
 
 impl Session {
-    pub fn new(session_name: String) -> Result<Arc<Self>> {
+    // Can't run this if in tmux session already
+    pub fn new(session_name: &str) -> Result<Arc<Self>> {
         const DELIM: &str = "|";
         let mut command = tmux();
         // need to use low level api
@@ -68,7 +74,7 @@ impl Session {
             "new-session",
             "-d",
             "-s",
-            &session_name,
+            session_name,
             "-P",
             "-F",
             &format!("{}{}{}", "#{window_id}", DELIM, "#{session_id}"),
@@ -109,6 +115,38 @@ impl Session {
     }
 }
 
+// just a better interface can't int
+/*#[derive(Clone, Debug)]
+pub struct WindowBuilder<'a> {
+    name: Option<&'a str>,
+    shell_command: Option<&'a str>,
+    session: Arc<Session>,
+}
+
+impl<'a> WindowBuilder<'a> {
+    pub fn new(session: &Arc<Session>) -> Self {
+        Self {
+            name: None,
+            shell_command: None,
+            session: Arc::clone(session),
+        }
+    }
+
+    pub fn name(mut self, name: &'a str) -> Self {
+        self.name = Some(name);
+        self
+    }
+
+    pub fn shell_command(mut self, command: &'a str) -> Self {
+        self.shell_command = Some(command);
+        self
+    }
+
+    pub fn build(self) -> Result<Arc<Window>> {
+        self.session.new_window(self.name, self.shell_command)
+    }
+}*/
+
 #[derive(Clone, Debug)]
 struct WindowCore {
     session: Arc<Session>,
@@ -117,9 +155,6 @@ struct WindowCore {
 }
 
 impl WindowCore {
-    // Overloads will be set while initializing the rhai engine
-    // Can't do builder pattern because the command needs to be executed at the end of
-    // construction. To have the caller call a fininalizing function would be to much responsibility to the caller
     fn new(session: Arc<Session>, name: Option<&str>, shell_command: Option<&str>) -> Result<Self> {
         const DELIM: &str = "|";
         let mut command = session.target("new-window")?;
@@ -198,7 +233,7 @@ impl WindowCore {
 #[derive(Clone, Debug)]
 pub struct Window {
     window_core: Arc<WindowCore>,
-    default_pane: Pane,
+    default_pane: Arc<Pane>,
 }
 
 impl Window {
@@ -206,12 +241,16 @@ impl Window {
         let window_core = Arc::new(window_core);
         Arc::new(Self {
             window_core: Arc::clone(&window_core),
-            default_pane: Pane::new(&window_core, &window_core.default_pane_id),
+            default_pane: Arc::new(Pane::new(&window_core, &window_core.default_pane_id)),
         })
     }
 
-    pub fn default_pane(&self) -> &Pane {
-        &self.default_pane
+    /*pub fn builder(session: &Arc<Session>) -> WindowBuilder {
+        WindowBuilder::new(session)
+    }*/
+
+    pub fn default_pane(&self) -> Arc<Pane> {
+        Arc::clone(&self.default_pane)
     }
 
     pub fn event_out(&self, direction: Direction) -> Result<()> {
@@ -256,14 +295,15 @@ impl Pane {
         Ok(command)
     }
 
-    pub fn split(&self, split: Direction) -> Result<Pane> {
-        let output = execute(self.split_command(split)?)?;
+    // No reasson to return arc here because it's owned which is fine with rhai
+    pub fn split(&self, direction: Direction) -> Result<Pane> {
+        let output = execute(self.split_command(direction)?)?;
         Ok(Pane::new(&self.window, output.trim()))
     }
 
     // TODO: maybe add support for below 3.1
-    pub fn split_with_size(&self, split: Direction, size: SplitSize) -> Result<Pane> {
-        let mut command = self.split_command(split)?;
+    pub fn split_with_size(&self, direction: Direction, size: SplitSize) -> Result<Pane> {
+        let mut command = self.split_command(direction)?;
         match size {
             SplitSize::Percentage(percentage) if percentage <= 100 => {
                 command.args(["-l", &format!("{percentage}%")])
