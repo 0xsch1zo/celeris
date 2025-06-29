@@ -69,6 +69,7 @@ pub struct Item<T: Send + Sync + 'static> {
 
 pub struct ItemView<'a, T: Send + Sync + 'static> {
     pub data: &'a T,
+    #[allow(dead_code)]
     pub haystack: Utf32Str<'a>,
 }
 
@@ -89,10 +90,6 @@ impl<T: Send + Sync + 'static> FuzzyListModel<T> {
 
     pub fn state(&self) -> ListState {
         self.state.clone()
-    }
-
-    pub fn select_first(&mut self) {
-        self.state.select_first();
     }
 
     pub fn select_prev(&mut self) {

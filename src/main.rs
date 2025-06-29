@@ -1,5 +1,4 @@
 use color_eyre::Result;
-use color_eyre::eyre::eyre;
 use std::fs;
 //use sesh::config::Config;
 //use sesh::manifest::Manifest;

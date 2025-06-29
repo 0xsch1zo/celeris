@@ -31,13 +31,7 @@ fn execute(mut command: process::Command) -> Result<String> {
 }
 
 fn tmux_target_command(target: &str, command: &str) -> Result<process::Command> {
-    let has_session_status = tmux()
-        .args(["has-session", "-t", &target])
-        .stderr(Stdio::null())
-        .stdout(Stdio::null())
-        .status()
-        .wrap_err_with(|| "has-session failed to execute")?;
-    if !has_session_status.success() {
+    if !Session::target_exists(target)? {
         return Err(eyre!("target: {target}, doesn't exist"));
     }
     let mut tmux = tmux();
@@ -59,7 +53,7 @@ pub enum SplitSize {
 
 #[derive(Clone, Debug)]
 pub struct Session {
-    session_id: String,
+    session_id: String, // this is the target
     window_count: Arc<Mutex<usize>>,
     default_window_id: String,
 }
@@ -67,6 +61,9 @@ pub struct Session {
 impl Session {
     // Can't run this if in tmux session already
     pub fn new(session_name: &str) -> Result<Arc<Self>> {
+        if Self::target_exists(session_name)? {
+            return Err(eyre!("session with name: {session_name}, already exists"));
+        }
         const DELIM: &str = "|";
         let mut command = tmux();
         // need to use low level api
@@ -113,6 +110,16 @@ impl Session {
         *count += 1;
         Ok(Window::new(window_core))
     }
+
+    fn target_exists(target: &str) -> Result<bool> {
+        let has_session_status = tmux()
+            .args(["has-session", "-t", &target])
+            .stderr(Stdio::null())
+            .stdout(Stdio::null())
+            .status()
+            .wrap_err_with(|| "has-session failed to execute")?;
+        Ok(has_session_status.success())
+    }
 }
 
 // just a better interface can't int
@@ -151,6 +158,7 @@ impl<'a> WindowBuilder<'a> {
 struct WindowCore {
     session: Arc<Session>,
     window_id: String,
+    target: String,
     default_pane_id: String,
 }
 
@@ -161,7 +169,7 @@ impl WindowCore {
         command.args([
             "-P",
             "-F",
-            &format!("{}{}{}", "#{pane_id}", DELIM, "#{windowd-id}"),
+            &format!("{}{}{}", "#{pane_id}", DELIM, "#{window_id}"),
         ]);
 
         if let Some(name) = name {
@@ -177,10 +185,12 @@ impl WindowCore {
             output
         ))?;
 
+        let target = format!("{}:{}", session.session_id, window_id);
         let window = Self {
             session: session,
             window_id: window_id.to_string(),
             default_pane_id: default_pane_id.to_string(),
+            target,
         };
 
         if let Some(_) = name {
@@ -191,8 +201,7 @@ impl WindowCore {
     }
 
     fn target(&self, command: &str) -> Result<process::Command> {
-        let target = format!("{}:{}", self.session.session_id, self.window_id);
-        tmux_target_command(&target, command)
+        tmux_target_command(&self.target, command)
     }
 
     fn set_option(&self, option: &str, value: &str) -> Result<()> {
@@ -264,24 +273,24 @@ impl Window {
 
 #[derive(Clone, Debug)]
 pub struct Pane {
-    pane_id: String,
     window: Arc<WindowCore>,
+    target: String,
 }
 
 impl Pane {
     fn new(window: &Arc<WindowCore>, pane_id: &str) -> Self {
+        let target = format!(
+            "{}:{}.{}",
+            window.session.session_id, window.window_id, pane_id
+        );
         Self {
-            pane_id: pane_id.to_string(),
             window: Arc::clone(window),
+            target,
         }
     }
 
     fn target(&self, command: &str) -> Result<process::Command> {
-        let target = format!(
-            "{}:{}.{}",
-            self.window.session.session_id, self.window.window_id, self.pane_id
-        );
-        tmux_target_command(&target, command)
+        tmux_target_command(&self.target, command)
     }
 
     fn split_command(&self, split: Direction) -> Result<process::Command> {
@@ -329,5 +338,188 @@ impl Pane {
 
         execute(send_keys)?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn kill_session(session: &Session) -> Result<()> {
+        execute(Session::target(session, "kill-session")?)?;
+        Ok(())
+    }
+
+    impl Drop for Session {
+        fn drop(&mut self) {
+            kill_session(self)
+                .expect("kill-session failed - environment after test is not cleaned up");
+        }
+    }
+
+    fn testing_session() -> Result<Arc<Session>> {
+        // Generate "random" id. Because tests are run in parallel
+        Ok(Session::new("__sesh_testing")?)
+    }
+
+    fn selected_pane_id(target: &str) -> Result<String> {
+        let mut command = tmux();
+        command.args(["display-message", "-p", "-t", target, "#{pane_id}"]);
+        Ok(execute(command)?.trim().to_string())
+    }
+
+    mod session {
+        use super::*;
+
+        #[test]
+        fn target_exits() -> Result<()> {
+            let session = testing_session()?;
+            // also used for pane
+            let window_target = format!("{}:{}", session.session_id, session.default_window_id);
+            let targets = vec![
+                format!("{}:", session.session_id),
+                selected_pane_id(&window_target)?,
+                window_target.clone(),
+                "2137:".to_string(),
+                format!("{}:2137", session.session_id),
+                format!("{}:{}.2137", session.session_id, session.default_window_id),
+            ];
+
+            targets.into_iter().try_for_each(|target| -> Result<()> {
+                let exists = Session::target_exists(&target)?;
+                let mut command = tmux();
+                let status = command.args(["has-session", "-t", &target]).status()?;
+                assert_eq!(
+                    exists,
+                    status.success(),
+                    "incorrect status of a session/window/pane"
+                );
+                Ok(())
+            })?;
+
+            Ok(())
+        }
+
+        #[test]
+        fn new_session() -> Result<()> {
+            let session = testing_session()?;
+            assert!(
+                Session::target_exists(&session.session_id)?,
+                "session doesn't exist"
+            );
+            Ok(())
+        }
+
+        #[test]
+        fn new_window() -> Result<()> {
+            let session = testing_session()?;
+
+            let window = session.new_window(None, None)?;
+            assert!(
+                Session::target_exists(&window.window_core.target)?,
+                "window doesn't exist"
+            );
+            let output = execute(session.target("list-windows")?)?;
+            let count = output.lines().count();
+            assert_eq!(count, 1, "default session window hasn't been moved");
+            Ok(())
+        }
+    }
+
+    mod window {
+        use super::*;
+
+        #[test]
+        fn set_option() -> Result<()> {
+            let session = testing_session()?;
+            let window = session.new_window(None, None)?;
+            let option = ("allow-rename", "off");
+            window.window_core.set_option(option.0, option.1)?;
+
+            let output = execute(window.window_core.target("show-window-options")?)?;
+            let option_got = output.lines().find(|line| line.contains(option.0));
+            let option_got =
+                option_got.ok_or_eyre("couldn't find option which was supposed to be set")?;
+            let option_got = option_got.split_whitespace().collect::<Vec<_>>();
+            assert_eq!(option_got.len(), 2);
+            assert_eq!(option_got[0], option.0);
+            assert_eq!(option_got[1], option.1);
+            Ok(())
+        }
+
+        #[test]
+        fn select() -> Result<()> {
+            let session = testing_session()?;
+            let window1 = session.new_window(None, None)?;
+            let _window2 = session.new_window(None, None)?;
+            window1.select()?;
+            let mut command = session.target("display-message")?;
+            command.args(["-p", "#{window_id}"]);
+            let output = execute(command)?;
+            assert!(window1.window_core.target.contains(output.trim()));
+            Ok(())
+        }
+
+        // Kind of unable to test this so this just checks if there was an error
+        // even if testing this is possible there is just no point because most of the logic is the
+        // burden of tmux
+        #[test]
+        fn even_out() -> Result<()> {
+            let session = testing_session()?;
+            let window = session.new_window(None, None)?;
+            window.event_out(Direction::Horizontal)?;
+            window.event_out(Direction::Vertical)?;
+            Ok(())
+        }
+
+        #[test]
+        fn default_pane() -> Result<()> {
+            let session = testing_session()?;
+            let window = session.new_window(None, None)?;
+            let pane = window.default_pane();
+            assert_eq!(Session::target_exists(&pane.target)?, true);
+            Ok(())
+        }
+    }
+
+    mod pane {
+        use super::*;
+
+        #[test]
+        fn split() -> Result<()> {
+            let session = testing_session()?;
+            let window = session.new_window(None, None)?;
+            let pane1 = window.default_pane();
+            let pane2 = pane1.split(Direction::Vertical)?;
+
+            assert_eq!(Session::target_exists(&pane1.target)?, true);
+            assert_eq!(Session::target_exists(&pane2.target)?, true);
+
+            let output = execute(window.window_core.target("list-panes")?)?;
+            assert_eq!(output.lines().count(), 2);
+            Ok(())
+        }
+
+        #[test]
+        fn select() -> Result<()> {
+            let session = testing_session()?;
+            let window = session.new_window(None, None)?;
+            let pane1 = window.default_pane();
+            let _pane2 = pane1.split(Direction::Vertical);
+            pane1.select()?;
+            let mut command = session.target("display-message")?;
+            command.args(["-p", "#{pane_id}"]);
+            let output = execute(command)?;
+            assert!(pane1.target.contains(output.trim()));
+            Ok(())
+        }
+
+        // Just checks for error. Testing this would be complicated
+        #[test]
+        fn run_command() -> Result<()> {
+            let session = testing_session()?;
+            let window = session.new_window(None, None)?;
+            window.default_pane().run_command("echo test")?;
+            Ok(())
+        }
     }
 }
