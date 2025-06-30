@@ -32,6 +32,6 @@ fn main() -> Result<()> {
     //t.even_out("3", Direction::Horizontal)?;
 
     let script = fs::read_to_string("test.rhai")?;
-    session_config::run_script(&script)?;
+    session_config::run_script(&script, String::from("1"))?;
     Ok(())
 }

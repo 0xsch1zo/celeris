@@ -1,7 +1,8 @@
-use crate::{tmux, tmux::Direction};
+use crate::tmux::{self, Direction};
 use color_eyre::eyre;
 use rhai::{
-    CustomType, Engine, EvalAltResult, Module, TypeBuilder, export_module, exported_module,
+    CustomType, Engine, EvalAltResult, FuncRegistration, Module, TypeBuilder, export_module,
+    exported_module,
 };
 use std::sync::Arc;
 
@@ -29,28 +30,13 @@ struct Session {
     tmux_session: Arc<tmux::Session>,
 }
 
-// The module is only needed for session as other types are constructed from it and don't make the
-// 'static' constructor available
-#[export_module]
-mod session_mod {
-    use rhai::plugin::*;
-    #[rhai_fn(return_raw)]
-    pub fn build(session_name: &str) -> Result<super::Session, Box<EvalAltResult>> {
-        let session = tmux::Session::new(session_name).map_err(|e| eyre_to_rhai_err(e))?;
-        Ok(super::Session {
-            tmux_session: session,
-        })
-    }
-}
-
 impl Session {
-    /*fn new(session_name: &str) -> Result<Session, Box<EvalAltResult>> {
-        let session =
-            tmux::Session::new(session_name).map_err(|e| eyre_to_rhai_err(e))?;
+    fn new(session_name: &str) -> Result<Session, Box<EvalAltResult>> {
+        let session = tmux::Session::new(session_name).map_err(|e| eyre_to_rhai_err(e))?;
         Ok(Session {
             tmux_session: session,
         })
-    }*/
+    }
 
     fn new_window(&mut self) -> Result<Window, Box<EvalAltResult>> {
         Ok(Window {
@@ -185,13 +171,16 @@ impl CustomType for Pane {
     }
 }
 
-pub fn run_script(script: &str) -> eyre::Result<()> {
+pub fn run_script(script: &str, session_name: String) -> eyre::Result<()> {
     let mut engine = Engine::new();
     engine.build_type::<Session>();
     engine.build_type::<Window>();
     engine.build_type::<Pane>();
 
-    let session_module = exported_module!(session_mod);
+    let mut session_module = Module::new();
+    FuncRegistration::new("build")
+        .in_internal_namespace()
+        .set_into_module(&mut session_module, move || Session::new(&session_name));
     engine.register_static_module("Session", session_module.into());
 
     let direction_module = exported_module!(direction_enum_mod);
