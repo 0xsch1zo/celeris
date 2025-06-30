@@ -1,6 +1,7 @@
-use crate::repos::Repo;
+use crate::internals_dir::internals_dir;
+use crate::session_manager::SessionProperties;
 use crate::utils;
-use color_eyre::eyre::{Context, Result};
+use color_eyre::eyre::{Context, OptionExt, Result};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
@@ -12,10 +13,10 @@ pub struct Manifest {
 }
 
 #[derive(Serialize, Deserialize)]
-struct Entry {
-    name: String,
-    path: PathBuf,
-    hash: String,
+pub struct Entry {
+    pub name: String,
+    pub path: PathBuf,
+    pub hash: String,
 }
 
 fn default_entries() -> Vec<Entry> {
@@ -23,8 +24,13 @@ fn default_entries() -> Vec<Entry> {
 }
 
 impl Manifest {
+    fn manifest_path() -> Result<PathBuf> {
+        const MANIFEST_FILE: &'static str = "manifest.toml";
+        Ok(internals_dir()?.join(MANIFEST_FILE))
+    }
+
     pub fn new() -> Result<Self> {
-        let path = utils::config_dir()?.join(Self::MANIFEST_FILE);
+        let path = Self::manifest_path()?;
         if path.exists() {
             let manifest = fs::read_to_string(path).wrap_err("Couldn't read manifest file")?;
             Ok(toml::from_str(&manifest).wrap_err("Failed to deserialize manifest")?)
@@ -35,20 +41,19 @@ impl Manifest {
         }
     }
 
-    const MANIFEST_FILE: &'static str = "manifest.toml";
-    pub fn serialize(&self) -> Result<()> {
+    fn serialize(&self) -> Result<()> {
         let manifest = toml::to_string(&self).wrap_err("Failed to serialize manifest")?;
-        let path = utils::config_dir()?.join(Self::MANIFEST_FILE);
+        let path = Self::manifest_path()?;
         fs::write(&path, &manifest)
             .wrap_err_with(|| format!("Failed to write to manifest file at: {path:?}",))?;
         Ok(())
     }
 
-    pub fn push_unique(&mut self, repo: Repo) -> Result<()> {
+    pub fn push_unique(&mut self, props: SessionProperties) -> Result<()> {
         let new_hash = format!(
             "{:x}",
             md5::compute(
-                utils::path_to_string(repo.path.as_path()).wrap_err("Failed to hash path")?,
+                utils::path_to_string(props.path.as_path()).wrap_err("Failed to hash path")?,
             ),
         );
         if self.entries.iter().any(|entry| entry.hash == new_hash) {
@@ -57,58 +62,18 @@ impl Manifest {
 
         self.entries.push(Entry {
             hash: new_hash,
-            name: repo.name,
-            path: repo.path,
+            name: props.name,
+            path: props.path,
         });
 
         Self::serialize(self)?;
         Ok(())
     }
 
-    /*pub fn update_diff(&mut self, repos: &[Repo]) -> Result<()> {
-        Ok(self.update(self.diff(repos)?)?)
-    }
-
-    fn diff(&self, repos: &[Repo]) -> Result<Vec<Repo>> {
-        let hashes = repos
+    pub fn entry(&self, name: &str) -> Result<&Entry> {
+        self.entries
             .iter()
-            .map(|repo| -> Result<String> {
-                Ok(format!(
-                    "{:x}",
-                    md5::compute(
-                        utils::path_to_string(repo.path.as_path())
-                            .wrap_err("Failed to hash path")?,
-                    ),
-                ))
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-
-        Ok(repos
-            .into_iter()
-            .zip(hashes)
-            .into_iter()
-            .filter(|(_, hash)| !self.entries.iter().any(|entry| entry.hash == *hash))
-            .map(|(repo, _)| repo.clone())
-            .collect::<Vec<_>>())
+            .find(|entry| entry.name == name)
+            .ok_or_eyre("manifest entry: {name}: not found")
     }
-
-    fn update(&mut self, repos: Vec<Repo>) -> Result<()> {
-        let mut entries = repos
-            .into_iter()
-            .map(|repo| -> Result<Entry> {
-                Ok(Entry {
-                    hash: format!(
-                        "{:x}",
-                        md5::compute(
-                            utils::path_to_string(&repo.path.as_path())
-                                .wrap_err("Failed to hash path")?
-                        )
-                    ),
-                    name: repo.name,
-                    path: repo.path,
-                })
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok(self.entries.append(&mut entries))
-    }*/
 }

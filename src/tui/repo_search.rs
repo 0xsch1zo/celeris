@@ -1,18 +1,24 @@
 use crate::config::Config;
 use crate::manifest::Manifest;
 use crate::repos::{Repo, search::search};
+use crate::script_manager;
 use crate::tui::{
-    RunningState, SearchModel,
+    SearchModel,
     fuzzy_list::{FuzzyListModel, Item},
 };
 use color_eyre::Result;
 use color_eyre::eyre::Context;
+use crossterm::ExecutableCommand;
 use crossterm::event::{self, Event};
+use crossterm::terminal::{
+    EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
+};
 use nucleo::Utf32String;
 use ratatui::prelude::*;
 use std::cell::RefCell;
 use std::error::Error;
 use std::fmt::Display;
+use std::io::stdout;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -43,6 +49,13 @@ impl RepoModel {
             config: Arc::new(config),
         }
     }
+}
+
+//#[derive(PartialEq, Eq)]
+enum RunningState {
+    Running,
+    Editor(RefCell<Repo>),
+    Done,
 }
 
 enum SearchState {
@@ -83,7 +96,7 @@ impl SearchModel for RepoModel {
             update(&mut self, Message::StartSearch)?;
         }
 
-        while self.running_state != RunningState::Done {
+        while let RunningState::Running = self.running_state {
             term.draw(|frame| {
                 view(&mut self, frame); // because of stateful widgets
             })?;
@@ -104,6 +117,12 @@ impl SearchModel for RepoModel {
 
             if let SearchState::Done(_) = self.search_state {
                 update(&mut self, Message::NucleoTick)?
+            }
+
+            if let RunningState::Editor(ref repo) = self.running_state {
+                let repo = repo.borrow().clone();
+                editor_mode(&mut self, repo, term)?;
+                update(&mut self, Message::Quit)?;
             }
         }
         Ok(())
@@ -188,12 +207,28 @@ fn update(model: &mut RepoModel, msg: Message) -> Result<()> {
         Message::Selected => {
             if let SearchState::Done(ref list_model) = model.search_state {
                 match list_model.selected() {
-                    Some(item) => model.manifest.push_unique(item.data.clone()).unwrap(),
+                    Some(item) => {
+                        model.running_state = RunningState::Editor(RefCell::new(item.data.clone()));
+                    }
                     _ => {}
                 }
             }
         }
     };
+    Ok(())
+}
+
+fn editor_mode<T: Backend>(
+    model: &mut RepoModel,
+    item: Repo,
+    term: &mut Terminal<T>,
+) -> Result<()> {
+    stdout().execute(LeaveAlternateScreen)?;
+    disable_raw_mode()?;
+    script_manager::edit_script(&mut model.manifest, item.into())?;
+    stdout().execute(EnterAlternateScreen)?;
+    enable_raw_mode()?;
+    term.clear()?;
     Ok(())
 }
 

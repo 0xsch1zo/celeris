@@ -1,7 +1,10 @@
 pub mod config;
+mod internals_dir;
 pub mod manifest;
 pub mod repos;
-pub mod session_config;
+pub mod script;
+mod script_manager;
+mod session_manager;
 pub mod tmux;
 pub mod tui;
 mod utils;

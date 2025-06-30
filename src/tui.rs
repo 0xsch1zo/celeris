@@ -21,12 +21,6 @@ pub trait SearchModel {
     fn search_bar(&self) -> &Input;
 }
 
-#[derive(PartialEq, Eq)]
-enum RunningState {
-    Running,
-    Done,
-}
-
 pub fn picker<T: SearchModel>(model: T) -> Result<()> {
     let mut term = ratatui::init();
     let result = model.main_loop(&mut term);

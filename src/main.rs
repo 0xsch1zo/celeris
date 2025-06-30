@@ -1,21 +1,19 @@
 use color_eyre::Result;
-use std::fs;
-//use sesh::config::Config;
+use sesh::config::Config;
 //use sesh::manifest::Manifest;
-//use sesh::tui::picker;
-//use sesh::tui::repo_search::RepoModel;
-use sesh::session_config;
+use sesh::tui::picker;
+use sesh::tui::repo_search::RepoModel;
 
 fn main() -> Result<()> {
     color_eyre::config::HookBuilder::default()
         .display_env_section(false)
         .install()?;
-    //let config = Config::new()?;
+    let config = Config::new()?;
     //let mut manifest = Manifest::new()?;
     //manifest.update_diff(&repos)?;
     //manifest.serialize()?;
 
-    //picker(RepoModel::new(config))?;
+    picker(RepoModel::new(config))?;
     /*let session = Session::new(String::from("test"))?;
     let nvim = session.new_window(Some("neovim"), None)?;
     nvim.default_pane().run_command("nvim")?;
@@ -31,7 +29,7 @@ fn main() -> Result<()> {
     //t.run_command("3", "1", "ls")?;
     //t.even_out("3", Direction::Horizontal)?;
 
-    let script = fs::read_to_string("test.rhai")?;
-    session_config::run_script(&script, String::from("1"))?;
+    //let script = fs::read_to_string("test.rhai")?;
+    //session_config::run_script(&script, String::from("1"))?;
     Ok(())
 }
