@@ -8,12 +8,13 @@ use std::path::Path;
 
 #[derive(Deserialize, Debug)]
 pub struct Config {
-    pub search_roots: Vec<SearchRoot>,
-    pub excludes: Option<Vec<String>>,
+    pub editor: Option<String>,
     #[serde(default = "default_depth")]
     pub depth: usize,
     #[serde(default = "default_search_subdirs")]
     pub search_subdirs: bool,
+    pub search_roots: Vec<SearchRoot>,
+    pub excludes: Option<Vec<String>>,
 }
 
 #[derive(Deserialize, Debug)]

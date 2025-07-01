@@ -74,6 +74,6 @@ impl Manifest {
         self.entries
             .iter()
             .find(|entry| entry.name == name)
-            .ok_or_eyre("manifest entry: {name}: not found")
+            .ok_or_eyre(format!("manifest entry: {name}: not found"))
     }
 }

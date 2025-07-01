@@ -51,7 +51,6 @@ impl RepoModel {
     }
 }
 
-//#[derive(PartialEq, Eq)]
 enum RunningState {
     Running,
     Editor(RefCell<Repo>),

@@ -1,19 +1,54 @@
-use color_eyre::Result;
+use color_eyre::{Result, eyre::Context};
 use sesh::config::Config;
-//use sesh::manifest::Manifest;
-use sesh::tui::picker;
-use sesh::tui::repo_search::RepoModel;
+use sesh::manifest::Manifest;
+use sesh::repos::search::search;
+use sesh::script;
+
+use clap::{Parser, Subcommand};
+
+#[derive(Parser)]
+#[command(version, about, long_about = Some("testing"))]
+struct Cli {
+    #[command(subcommand)]
+    command: Commands,
+}
+
+#[derive(Subcommand)]
+enum Commands {
+    FindRepos,
+    ListSessions,
+    EditSession { session_name: String },
+    NewSession { session_name: String },
+    LoadSession { session_name: String },
+}
 
 fn main() -> Result<()> {
     color_eyre::config::HookBuilder::default()
         .display_env_section(false)
         .install()?;
     let config = Config::new()?;
-    //let mut manifest = Manifest::new()?;
-    //manifest.update_diff(&repos)?;
-    //manifest.serialize()?;
+    let manifest = Manifest::new()?;
 
-    picker(RepoModel::new(config))?;
+    let cli = Cli::parse();
+
+    match &cli.command {
+        Commands::FindRepos => {
+            search(&config)?
+                .into_iter()
+                .for_each(|r| println!("{}", r.name));
+        }
+        Commands::ListSessions => {}
+        Commands::EditSession { session_name } => {
+            let entry = manifest.entry(session_name).wrap_err("session not found")?;
+            script::edit(&script::path(&entry.hash)?, &config)?;
+        }
+        Commands::NewSession { session_name } => {}
+        Commands::LoadSession { session_name } => {
+            let entry = manifest.entry(session_name).wrap_err("session not found")?;
+            script::run(&script::path(&entry.hash)?, session_name.to_string())?;
+        }
+    }
+    //picker(RepoModel::new(config))?;
     /*let session = Session::new(String::from("test"))?;
     let nvim = session.new_window(Some("neovim"), None)?;
     nvim.default_pane().run_command("nvim")?;

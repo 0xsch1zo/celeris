@@ -18,3 +18,4 @@ md5 = "0.7.0"
 throbber-widgets-tui = "0.8.0"
 itertools = "0.14.0"
 rhai = { version = "1.22.2", features = ["sync"] }
+clap = { version = "4.5.40", features = ["derive"] }
