@@ -1,10 +1,10 @@
+use clap::{Parser, Subcommand};
+use color_eyre::eyre::OptionExt;
 use color_eyre::{Result, eyre::Context};
 use sesh::config::Config;
 use sesh::manifest::Manifest;
 use sesh::repos::search::search;
-use sesh::script;
-
-use clap::{Parser, Subcommand};
+use sesh::{script, session_manager};
 
 #[derive(Parser)]
 #[command(version, about, long_about = Some("testing"))]
@@ -15,7 +15,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    FindRepos,
+    PickRepo,
     ListSessions,
     EditSession { session_name: String },
     NewSession { session_name: String },
@@ -27,15 +27,20 @@ fn main() -> Result<()> {
         .display_env_section(false)
         .install()?;
     let config = Config::new()?;
-    let manifest = Manifest::new()?;
+    let mut manifest = Manifest::new()?;
 
     let cli = Cli::parse();
 
     match &cli.command {
-        Commands::FindRepos => {
-            search(&config)?
+        Commands::PickRepo => {
+            let repos = search(&config)?;
+            let names = repos.iter().map(|r| r.name.clone()).collect::<Vec<_>>();
+            let picked_name = session_manager::filter_names(&config, &names)?;
+            let repo = repos
                 .into_iter()
-                .for_each(|r| println!("{}", r.name));
+                .find(|r| r.name == picked_name)
+                .ok_or_eyre("repository not found: {picked_name}")?;
+            session_manager::create(&mut manifest, &config, repo.into())?;
         }
         Commands::ListSessions => {}
         Commands::EditSession { session_name } => {

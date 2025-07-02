@@ -23,6 +23,8 @@ fn default_entries() -> Vec<Entry> {
     Vec::new()
 }
 
+// TODO: handle the case when a new repo with the same name is added but with a different path
+// This is possilbe because RepoManager disambiguates only the currenly found repos
 impl Manifest {
     fn manifest_path() -> Result<PathBuf> {
         const MANIFEST_FILE: &'static str = "manifest.toml";
