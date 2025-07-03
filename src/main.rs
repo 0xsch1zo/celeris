@@ -34,12 +34,16 @@ fn main() -> Result<()> {
     match &cli.command {
         Commands::PickRepo => {
             let repos = search(&config)?;
-            let names = repos.iter().map(|r| r.name.clone()).collect::<Vec<_>>();
+            let names = repos
+                .iter()
+                .filter(|r| !manifest.contains(&r.name))
+                .map(|r| r.name.clone())
+                .collect::<Vec<_>>();
             let picked_name = session_manager::filter_names(&config, &names)?;
             let repo = repos
                 .into_iter()
                 .find(|r| r.name == picked_name)
-                .ok_or_eyre("repository not found: {picked_name}")?;
+                .ok_or_eyre(format!("repository not found: {picked_name}"))?;
             session_manager::create(&mut manifest, &config, repo.into())?;
         }
         Commands::ListSessions => {}

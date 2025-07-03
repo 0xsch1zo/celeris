@@ -78,4 +78,8 @@ impl Manifest {
             .find(|entry| entry.name == name)
             .ok_or_eyre(format!("manifest entry: {name}: not found"))
     }
+
+    pub fn contains(&self, name: &str) -> bool {
+        self.entries.iter().find(|s| s.name == name).is_some()
+    }
 }
