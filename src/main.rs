@@ -5,6 +5,8 @@ use sesh::config::Config;
 use sesh::manifest::Manifest;
 use sesh::repos::search::search;
 use sesh::{script, session_manager};
+use std::sync::mpsc;
+use std::thread;
 
 #[derive(Parser)]
 #[command(version, about, long_about = Some("testing"))]
@@ -33,13 +35,15 @@ fn main() -> Result<()> {
 
     match &cli.command {
         Commands::PickRepo => {
+            let name_filter =
+                session_manager::NameFilter::spawn(&config).wrap_err("failed to spawn filter")?;
             let repos = search(&config)?;
             let names = repos
                 .iter()
                 .filter(|r| !manifest.contains(&r.name))
                 .map(|r| r.name.clone())
                 .collect::<Vec<_>>();
-            let picked_name = session_manager::filter_names(&config, &names)?;
+            let picked_name = name_filter.filter(&names)?;
             let repo = repos
                 .into_iter()
                 .find(|r| r.name == picked_name)
