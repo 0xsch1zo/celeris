@@ -5,8 +5,6 @@ use sesh::config::Config;
 use sesh::manifest::Manifest;
 use sesh::repos::search::search;
 use sesh::{script, session_manager};
-use std::sync::mpsc;
-use std::thread;
 
 #[derive(Parser)]
 #[command(version, about, long_about = Some("testing"))]
@@ -55,7 +53,7 @@ fn main() -> Result<()> {
             let entry = manifest.entry(session_name).wrap_err("session not found")?;
             script::edit(&script::path(&entry.hash)?, &config)?;
         }
-        Commands::NewSession { session_name } => {}
+        Commands::NewSession { session_name: _ } => {}
         Commands::LoadSession { session_name } => {
             let entry = manifest.entry(session_name).wrap_err("session not found")?;
             script::run(&script::path(&entry.hash)?, session_name.to_string())?;

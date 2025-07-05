@@ -1,12 +1,12 @@
 use color_eyre::{
     Result,
-    eyre::Context,
-    eyre::{OptionExt, eyre},
+    eyre::{Context, ContextCompat, OptionExt, eyre},
 };
 use std::process;
 use std::process::Stdio;
 use std::str;
 use std::sync::{Arc, Mutex};
+use std::{env, io::Read};
 
 // TODO: provide a custom tmux command builder for special cases
 // TODO: handle tmux not being available
@@ -49,6 +49,11 @@ pub enum Direction {
 pub enum SplitSize {
     Percentage(u8),
     Fixed(u32),
+}
+
+enum AttachState {
+    Attached,
+    NotAttached,
 }
 
 #[derive(Clone, Debug)]
@@ -94,6 +99,56 @@ impl Session {
     fn target(&self, command: &str) -> Result<process::Command> {
         let target = format!("{}:", self.session_id);
         tmux_target_command(&target, command)
+    }
+
+    // Checks if in the current environment there is an attached session
+    fn tmux_attached() -> Result<AttachState> {
+        Ok(match env::var("TMUX") {
+            Ok(_) => AttachState::Attached,
+            Err(env::VarError::NotPresent) => AttachState::NotAttached,
+            Err(err) => return Err(err).wrap_err("failed to check for active tmux session"),
+        })
+    }
+
+    fn attach_core(&self, attached: AttachState) -> Result<()> {
+        let mut command = match attached {
+            AttachState::Attached => self.target("switch-client")?,
+            AttachState::NotAttached => self.target("attach-session")?,
+        };
+
+        let mut tmux_handle = command
+            .stderr(Stdio::piped())
+            .spawn()
+            .wrap_err("failed to execute attach session command")?;
+
+        let status = tmux_handle
+            .wait()
+            .wrap_err("failed to wait for attach session command, couldn't get status")?;
+
+        if !status.success() {
+            let mut error = String::new();
+            tmux_handle
+                .stderr
+                .take()
+                .wrap_err("stderr of tmux not available")
+                .wrap_err(format!(
+                    "failed to retrieve error from failing tmux: {:?}",
+                    command
+                ))?
+                .read_to_string(&mut error)
+                .wrap_err(format!(
+                    "failed to retrieve error from failing tmux: {:?}",
+                    command
+                ))?;
+            return Err(eyre!("tmux: {:?}, failed", command).wrap_err("failed to attach session"));
+        }
+
+        Ok(())
+    }
+
+    pub fn attach(&self) -> Result<()> {
+        self.attach_core(Self::tmux_attached()?)?;
+        Ok(())
     }
 
     pub fn new_window(
@@ -421,6 +476,22 @@ mod tests {
             let output = execute(session.target("list-windows")?)?;
             let count = output.lines().count();
             assert_eq!(count, 1, "default session window hasn't been moved");
+            Ok(())
+        }
+
+        fn attach_test(attached: AttachState) -> Result<()> {
+            let session = testing_session()?;
+            session.attach_core(attached)?;
+            let mut command = session.target("display-message")?;
+            command.args(["-p", "#{session_attached}"]);
+            let output = execute(command)?;
+            assert_eq!(output.trim(), "1");
+            Ok(())
+        }
+
+        #[test]
+        fn attach_tmux() -> Result<()> {
+            attach_test(AttachState::Attached)?;
             Ok(())
         }
     }

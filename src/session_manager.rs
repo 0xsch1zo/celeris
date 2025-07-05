@@ -9,7 +9,6 @@ use color_eyre::eyre::eyre;
 use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::process::{self, Stdio};
-use std::sync::mpsc;
 
 pub struct SessionProperties {
     pub name: String,

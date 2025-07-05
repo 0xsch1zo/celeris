@@ -38,10 +38,9 @@ struct Session {
 }
 
 impl Session {
-    fn new(session_name: &str) -> Result<Session, Box<EvalAltResult>> {
-        let session = tmux::Session::new(session_name).map_err(|e| eyre_to_rhai_err(e))?;
+    fn new(tmux_session: &Arc<tmux::Session>) -> Result<Session, Box<EvalAltResult>> {
         Ok(Session {
-            tmux_session: session,
+            tmux_session: Arc::clone(tmux_session),
         })
     }
 
@@ -185,16 +184,20 @@ pub fn run(path: &Path, session_name: String) -> eyre::Result<()> {
     engine.build_type::<Window>();
     engine.build_type::<Pane>();
 
+    let tmux_session = tmux::Session::new(&session_name).map_err(|e| eyre_to_rhai_err(e))?;
+    let script_session = Arc::clone(&tmux_session); // a copy just for build
     let mut session_module = Module::new();
     FuncRegistration::new("build")
         .in_internal_namespace()
-        .set_into_module(&mut session_module, move || Session::new(&session_name));
+        .set_into_module(&mut session_module, move || Session::new(&script_session));
+
     engine.register_static_module("Session", session_module.into());
 
     let direction_module = exported_module!(direction_enum_mod);
     engine.register_static_module("Direction", direction_module.into());
 
     engine.run(&script)?;
+    tmux_session.attach()?;
     Ok(())
 }
 
