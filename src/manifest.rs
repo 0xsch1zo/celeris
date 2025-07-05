@@ -27,6 +27,7 @@ impl PartialEq for Entry {
 
 impl Entry {
     pub fn new(name: String, session_path: PathBuf) -> Result<Self> {
+        // TODO: use unique id instead of hash, or maybe not, idk think about it
         let hash = format!(
             "{:x}",
             md5::compute(
@@ -46,7 +47,11 @@ impl Entry {
     }
 
     pub fn session_path(&self) -> &Path {
-        &self.session_path.as_path()
+        self.session_path.as_path()
+    }
+
+    pub fn script_path(&self) -> &Path {
+        self.script_path.as_path()
     }
 }
 

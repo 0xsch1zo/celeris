@@ -177,7 +177,7 @@ impl CustomType for Pane {
 }
 
 pub fn run(entry: &manifest::Entry) -> eyre::Result<()> {
-    let script = fs::read_to_string(entry.session_path()).wrap_err("session script not found")?;
+    let script = fs::read_to_string(entry.script_path()).wrap_err("session script not found")?;
     let mut engine = Engine::new();
     engine.build_type::<Session>();
     engine.build_type::<Window>();
@@ -207,7 +207,7 @@ pub fn edit(entry: &manifest::Entry, config: &Config) -> eyre::Result<()> {
     };
 
     process::Command::new(editor)
-        .arg(utils::path_to_string(entry.session_path())?)
+        .arg(utils::path_to_string(entry.script_path())?)
         .status()?;
     Ok(())
 }
