@@ -1,5 +1,5 @@
 use crate::config::Config;
-use crate::internals_dir::internals_dir;
+use crate::manifest;
 use crate::tmux::{self, Direction};
 use crate::utils;
 use color_eyre::eyre::{self, Context};
@@ -9,7 +9,6 @@ use rhai::{
 };
 use std::env;
 use std::fs;
-use std::path::{Path, PathBuf};
 use std::process;
 use std::sync::Arc;
 
@@ -177,14 +176,14 @@ impl CustomType for Pane {
     }
 }
 
-pub fn run(path: &Path, session_name: String) -> eyre::Result<()> {
-    let script = fs::read_to_string(path).wrap_err("session script not found")?;
+pub fn run(entry: &manifest::Entry) -> eyre::Result<()> {
+    let script = fs::read_to_string(entry.session_path()).wrap_err("session script not found")?;
     let mut engine = Engine::new();
     engine.build_type::<Session>();
     engine.build_type::<Window>();
     engine.build_type::<Pane>();
 
-    let tmux_session = tmux::Session::new(&session_name).map_err(|e| eyre_to_rhai_err(e))?;
+    let tmux_session = tmux::Session::new(entry.name()).map_err(|e| eyre_to_rhai_err(e))?;
     let script_session = Arc::clone(&tmux_session); // a copy just for build
     let mut session_module = Module::new();
     FuncRegistration::new("build")
@@ -201,25 +200,14 @@ pub fn run(path: &Path, session_name: String) -> eyre::Result<()> {
     Ok(())
 }
 
-pub fn path(session_hash: &str) -> eyre::Result<PathBuf> {
-    const SCRIPTS_DIR: &'static str = "scripts";
-    let path = internals_dir()?.join(SCRIPTS_DIR);
-    if !path.exists() {
-        fs::create_dir(&path)
-            .wrap_err_with(|| format!("failed to create scripts dir at {path:?}"))?;
-    }
-
-    Ok(path.join(session_hash).with_extension("rhai"))
-}
-
-pub fn edit(path: &Path, config: &Config) -> eyre::Result<()> {
+pub fn edit(entry: &manifest::Entry, config: &Config) -> eyre::Result<()> {
     let editor = match &config.editor {
         Some(editor) => editor,
         None => &env::var("EDITOR").wrap_err("$EDITOR is not set nor set in the config")?,
     };
 
     process::Command::new(editor)
-        .arg(utils::path_to_string(&path)?)
+        .arg(utils::path_to_string(entry.session_path())?)
         .status()?;
     Ok(())
 }

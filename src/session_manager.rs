@@ -1,4 +1,5 @@
 use crate::config::Config;
+use crate::manifest;
 use crate::manifest::Manifest;
 use crate::repos::Repo;
 use crate::script;
@@ -10,6 +11,7 @@ use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::process::{self, Stdio};
 
+#[derive(Clone)]
 pub struct SessionProperties {
     pub name: String,
     pub path: PathBuf,
@@ -24,12 +26,54 @@ impl From<Repo> for SessionProperties {
     }
 }
 
-pub fn create(manifest: &mut Manifest, config: &Config, props: SessionProperties) -> Result<()> {
-    let name = props.name.clone();
-    manifest.push_unique(props)?;
-    let entry = manifest.entry(&name)?;
-    script::edit(&script::path(&entry.hash)?, &config)?;
-    Ok(())
+pub struct SessionManager<'a> {
+    manifest: Manifest,
+    config: &'a Config,
+}
+
+impl<'a> SessionManager<'a> {
+    pub fn new(config: &'a Config) -> Result<Self> {
+        Ok(Self {
+            manifest: Manifest::new()?,
+            config,
+        })
+    }
+
+    fn entry(&self, name: &str) -> Result<&manifest::Entry> {
+        Ok(self
+            .manifest
+            .entry(&name)
+            .ok_or_eyre(format!("session not found: {}", name))?)
+    }
+
+    pub fn create(&mut self, props: SessionProperties) -> Result<()> {
+        let name = props.name.clone();
+        self.manifest.push_unique(props)?;
+        let entry = self.entry(&name)?;
+        script::edit(&entry, &self.config)?;
+        Ok(())
+    }
+
+    pub fn edit(&self, name: &str) -> Result<()> {
+        let entry = self.entry(name)?;
+        script::edit(entry, &self.config)?;
+        Ok(())
+    }
+
+    pub fn run(&self, name: &str) -> Result<()> {
+        let entry = self.entry(name)?;
+        script::run(entry).wrap_err("script error")?;
+        Ok(())
+    }
+
+    pub fn exists(&self, name: &str) -> bool {
+        self.manifest.contains(name)
+    }
+
+    pub fn remove(&mut self, name: &str) -> Result<()> {
+        self.manifest.remove(name)?;
+        Ok(())
+    }
 }
 
 pub struct NameFilter {

@@ -1,10 +1,10 @@
 use crate::internals_dir::internals_dir;
 use crate::session_manager::SessionProperties;
 use crate::utils;
-use color_eyre::eyre::{Context, OptionExt, Result};
+use color_eyre::eyre::{Context, OptionExt, Result, eyre};
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[derive(Serialize, Deserialize)]
 pub struct Manifest {
@@ -14,9 +14,40 @@ pub struct Manifest {
 
 #[derive(Serialize, Deserialize)]
 pub struct Entry {
-    pub name: String,
-    pub path: PathBuf,
-    pub hash: String,
+    name: String,
+    session_path: PathBuf,
+    script_path: PathBuf,
+}
+
+impl PartialEq for Entry {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name
+    }
+}
+
+impl Entry {
+    pub fn new(name: String, session_path: PathBuf) -> Result<Self> {
+        let hash = format!(
+            "{:x}",
+            md5::compute(
+                utils::path_to_string(session_path.as_path()).wrap_err("Failed to hash path")?,
+            )
+        );
+        let script_path = Manifest::scripts_path()?.join(hash).with_extension("rhai");
+        Ok(Self {
+            name,
+            session_path,
+            script_path,
+        })
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn session_path(&self) -> &Path {
+        &self.session_path.as_path()
+    }
 }
 
 fn default_entries() -> Vec<Entry> {
@@ -29,6 +60,16 @@ impl Manifest {
     fn manifest_path() -> Result<PathBuf> {
         const MANIFEST_FILE: &'static str = "manifest.toml";
         Ok(internals_dir()?.join(MANIFEST_FILE))
+    }
+
+    fn scripts_path() -> Result<PathBuf> {
+        const SCRIPTS_DIR: &'static str = "scripts";
+        let scripts_path = internals_dir()?.join(SCRIPTS_DIR);
+        if !scripts_path.exists() {
+            fs::create_dir(&scripts_path)
+                .wrap_err_with(|| format!("failed to create scripts dir at {scripts_path:?}"))?;
+        }
+        Ok(scripts_path)
     }
 
     pub fn new() -> Result<Self> {
@@ -52,34 +93,33 @@ impl Manifest {
     }
 
     pub fn push_unique(&mut self, props: SessionProperties) -> Result<()> {
-        let new_hash = format!(
-            "{:x}",
-            md5::compute(
-                utils::path_to_string(props.path.as_path()).wrap_err("Failed to hash path")?,
-            ),
-        );
-        if self.entries.iter().any(|entry| entry.hash == new_hash) {
-            return Ok(());
+        let entry = Entry::new(props.name, props.path).wrap_err("failed to create entry")?;
+        if self.entries.contains(&entry) {
+            return Err(eyre!("manifest entry already exists"));
         }
 
-        self.entries.push(Entry {
-            hash: new_hash,
-            name: props.name,
-            path: props.path,
-        });
-
+        self.entries.push(entry);
         Self::serialize(self)?;
         Ok(())
     }
 
-    pub fn entry(&self, name: &str) -> Result<&Entry> {
-        self.entries
-            .iter()
-            .find(|entry| entry.name == name)
-            .ok_or_eyre(format!("manifest entry: {name}: not found"))
+    pub fn entry(&self, name: &str) -> Option<&Entry> {
+        self.entries.iter().find(|entry| entry.name == name)
     }
 
     pub fn contains(&self, name: &str) -> bool {
         self.entries.iter().find(|s| s.name == name).is_some()
+    }
+
+    pub fn remove(&mut self, name: &str) -> Result<()> {
+        self.entries.remove(
+            self.entries
+                .iter()
+                .position(|e| e.name == name)
+                .ok_or_eyre("manifest: entry not found")?,
+        );
+
+        Self::serialize(self)?;
+        Ok(())
     }
 }

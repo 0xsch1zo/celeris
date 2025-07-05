@@ -2,9 +2,8 @@ use clap::{Parser, Subcommand};
 use color_eyre::eyre::OptionExt;
 use color_eyre::{Result, eyre::Context};
 use sesh::config::Config;
-use sesh::manifest::Manifest;
 use sesh::repos::search::search;
-use sesh::{script, session_manager};
+use sesh::session_manager::{self, SessionManager};
 
 #[derive(Parser)]
 #[command(version, about, long_about = Some("testing"))]
@@ -18,7 +17,6 @@ enum Commands {
     PickRepo,
     ListSessions,
     EditSession { session_name: String },
-    NewSession { session_name: String },
     LoadSession { session_name: String },
 }
 
@@ -27,8 +25,7 @@ fn main() -> Result<()> {
         .display_env_section(false)
         .install()?;
     let config = Config::new()?;
-    let mut manifest = Manifest::new()?;
-
+    let mut session_manager = SessionManager::new(&config)?;
     let cli = Cli::parse();
 
     match &cli.command {
@@ -38,7 +35,7 @@ fn main() -> Result<()> {
             let repos = search(&config)?;
             let names = repos
                 .iter()
-                .filter(|r| !manifest.contains(&r.name))
+                .filter(|r| !session_manager.exists(&r.name))
                 .map(|r| r.name.clone())
                 .collect::<Vec<_>>();
             let picked_name = name_filter.filter(&names)?;
@@ -46,36 +43,11 @@ fn main() -> Result<()> {
                 .into_iter()
                 .find(|r| r.name == picked_name)
                 .ok_or_eyre(format!("repository not found: {picked_name}"))?;
-            session_manager::create(&mut manifest, &config, repo.into())?;
+            session_manager.create(repo.into())?;
         }
         Commands::ListSessions => {}
-        Commands::EditSession { session_name } => {
-            let entry = manifest.entry(session_name).wrap_err("session not found")?;
-            script::edit(&script::path(&entry.hash)?, &config)?;
-        }
-        Commands::NewSession { session_name: _ } => {}
-        Commands::LoadSession { session_name } => {
-            let entry = manifest.entry(session_name).wrap_err("session not found")?;
-            script::run(&script::path(&entry.hash)?, session_name.to_string())?;
-        }
+        Commands::EditSession { session_name } => session_manager.edit(session_name)?,
+        Commands::LoadSession { session_name } => session_manager.run(session_name)?,
     }
-    //picker(RepoModel::new(config))?;
-    /*let session = Session::new(String::from("test"))?;
-    let nvim = session.new_window(Some("neovim"), None)?;
-    nvim.default_pane().run_command("nvim")?;
-
-    let build = session.new_window(Some("build"), None)?;
-    build.default_pane().run_command("echo hello")?;
-
-    let tests = build.default_pane().split(Direction::Horizontal)?;
-    tests.run_command("cargo test")?;*/
-    //window.even_out(Direction::Vertical)?;
-    //session.windows()[0].panes()[0].run_command("echo deeez nuts");
-    //t.split_window("3", Split::Vertical)?;
-    //t.run_command("3", "1", "ls")?;
-    //t.even_out("3", Direction::Horizontal)?;
-
-    //let script = fs::read_to_string("test.rhai")?;
-    //session_config::run_script(&script, String::from("1"))?;
     Ok(())
 }
