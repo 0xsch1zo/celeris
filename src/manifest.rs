@@ -1,9 +1,9 @@
 use crate::internals_dir::internals_dir;
-use crate::session_manager::SessionProperties;
 use crate::utils;
 use color_eyre::eyre::{Context, OptionExt, Result, eyre};
 use serde::{Deserialize, Serialize};
 use std::fs;
+use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
 
 #[derive(Serialize, Deserialize)]
@@ -21,17 +21,19 @@ pub struct Entry {
 
 impl PartialEq for Entry {
     fn eq(&self, other: &Self) -> bool {
+        // TODO: handle same script_paths
         self.name == other.name
     }
 }
 
+// TODO: maybe use a map
 impl Entry {
     pub fn new(name: String, session_path: PathBuf) -> Result<Self> {
         // TODO: use unique id instead of hash, or maybe not, idk think about it
         let hash = format!(
             "{:x}",
             md5::compute(
-                utils::path_to_string(session_path.as_path()).wrap_err("Failed to hash path")?,
+                utils::path_to_string(session_path.as_path()).wrap_err("failed to hash path")?,
             )
         );
         let script_path = Manifest::scripts_path()?.join(hash).with_extension("rhai");
@@ -80,8 +82,8 @@ impl Manifest {
     pub fn new() -> Result<Self> {
         let path = Self::manifest_path()?;
         if path.exists() {
-            let manifest = fs::read_to_string(path).wrap_err("Couldn't read manifest file")?;
-            Ok(toml::from_str(&manifest).wrap_err("Failed to deserialize manifest")?)
+            let manifest = fs::read_to_string(path).wrap_err("couldn't read manifest file")?;
+            Ok(toml::from_str(&manifest).wrap_err("failed to deserialize manifest")?)
         } else {
             Ok(Manifest {
                 entries: Vec::new(),
@@ -90,15 +92,46 @@ impl Manifest {
     }
 
     fn serialize(&self) -> Result<()> {
-        let manifest = toml::to_string(&self).wrap_err("Failed to serialize manifest")?;
+        let manifest = toml::to_string(&self).wrap_err("failed to serialize manifest")?;
         let path = Self::manifest_path()?;
         fs::write(&path, &manifest)
-            .wrap_err_with(|| format!("Failed to write to manifest file at: {path:?}",))?;
+            .wrap_err_with(|| format!("failed to write to manifest file at: {path:?}",))?;
         Ok(())
     }
 
-    pub fn push_unique(&mut self, props: SessionProperties) -> Result<()> {
-        let entry = Entry::new(props.name, props.path).wrap_err("failed to create entry")?;
+    pub fn deduce_name(&self, path: &Path) -> Result<String> {
+        if self.entries.iter().any(|e| e.session_path == path) {
+            return Err(eyre!("manifest: entry already exists with this path"));
+        }
+
+        let mut name = utils::file_name(path).wrap_err("failed to deduce session name")?;
+        let ancestors = path.ancestors().collect::<Vec<_>>();
+        let ancestors = ancestors
+            .iter()
+            .skip(1)
+            .enumerate()
+            .take_while(|(i, _)| *i < ancestors.len() - 2) // acount for skip
+            .map(|(_, a)| a)
+            .map(|a| utils::file_name(a))
+            .collect::<Result<Vec<_>>>()?;
+
+        let _ = ancestors.into_iter().try_for_each(|a| {
+            if self.contains(&name) {
+                name = format!("{}/{}", a, name);
+                ControlFlow::Continue(())
+            } else {
+                ControlFlow::Break(())
+            }
+        });
+
+        if self.contains(&name) {
+            return Err(eyre!("manifest: entry already exists with this path"));
+        }
+
+        Ok(name)
+    }
+
+    pub fn push(&mut self, entry: Entry) -> Result<()> {
         if self.entries.contains(&entry) {
             return Err(eyre!("manifest entry already exists"));
         }

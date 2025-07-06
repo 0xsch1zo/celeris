@@ -1,9 +1,10 @@
+use std::path::PathBuf;
+
 use clap::{Parser, Subcommand};
-use color_eyre::eyre::OptionExt;
-use color_eyre::{Result, eyre::Context};
+use color_eyre::Result;
 use sesh::config::Config;
-use sesh::repos::search::search;
-use sesh::session_manager::{self, SessionManager};
+use sesh::repo_search;
+use sesh::session_manager::{SessionManager, SessionProperties};
 
 #[derive(Parser)]
 #[command(version, about, long_about = Some("testing"))]
@@ -14,12 +15,25 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    PickRepo,
+    FindRepos,
     ListSessions,
-    EditSession { session_name: String },
-    LoadSession { session_name: String },
+    NewSession {
+        path: PathBuf,
+        #[arg(short, long)]
+        name: Option<String>,
+    },
+    EditSession {
+        name: String,
+    },
+    LoadSession {
+        name: String,
+    },
+    RemoveSession {
+        name: String,
+    },
 }
 
+// TODO: somthing something last project feature add
 fn main() -> Result<()> {
     color_eyre::config::HookBuilder::default()
         .display_env_section(false)
@@ -28,26 +42,19 @@ fn main() -> Result<()> {
     let mut session_manager = SessionManager::new(&config)?;
     let cli = Cli::parse();
 
-    match &cli.command {
-        Commands::PickRepo => {
-            let name_filter =
-                session_manager::NameFilter::spawn(&config).wrap_err("failed to spawn filter")?;
-            let repos = search(&config)?;
-            let names = repos
-                .iter()
-                .filter(|r| !session_manager.exists(&r.name))
-                .map(|r| r.name.clone())
-                .collect::<Vec<_>>();
-            let picked_name = name_filter.filter(&names)?;
-            let repo = repos
-                .into_iter()
-                .find(|r| r.name == picked_name)
-                .ok_or_eyre(format!("repository not found: {picked_name}"))?;
-            session_manager.create(repo.into())?;
+    match cli.command {
+        Commands::FindRepos => {
+            let repos = repo_search::search(&config)?;
+            repos.iter().for_each(|r| println!("{r}"));
         }
         Commands::ListSessions => {}
-        Commands::EditSession { session_name } => session_manager.edit(session_name)?,
-        Commands::LoadSession { session_name } => session_manager.run(session_name)?,
+        Commands::NewSession { name, path } => {
+            let props = SessionProperties::from(name, path);
+            session_manager.create(props)?;
+        }
+        Commands::EditSession { name } => session_manager.edit(&name)?,
+        Commands::LoadSession { name } => session_manager.run(&name)?,
+        Commands::RemoveSession { name } => session_manager.remove(&name)?,
     }
     Ok(())
 }

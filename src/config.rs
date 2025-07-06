@@ -9,7 +9,6 @@ use std::path::Path;
 #[derive(Deserialize, Debug)]
 pub struct Config {
     pub editor: Option<String>,
-    pub filter_command: FilterCommand,
     #[serde(default = "default_depth")]
     pub depth: usize,
     #[serde(default = "default_search_subdirs")]
