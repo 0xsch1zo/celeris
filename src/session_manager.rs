@@ -2,6 +2,7 @@ use crate::config::Config;
 use crate::manifest;
 use crate::manifest::Manifest;
 use crate::script;
+use crate::utils;
 use color_eyre::Result;
 use color_eyre::eyre::OptionExt;
 use color_eyre::eyre::WrapErr;
@@ -64,11 +65,7 @@ impl<'a> SessionManager<'a> {
     }
 
     pub fn create(&mut self, mut props: SessionProperties) -> Result<()> {
-        if props.path.starts_with("~") {
-            props.path = dirs::home_dir()
-                .ok_or_eyre("home directory not found despite home shell expansion used")?
-                .join(props.path);
-        }
+        props.path = utils::expand_path(props.path)?;
         let name = props.name(&self.manifest)?;
         let entry = manifest::Entry::new(name.clone(), props.path)
             .wrap_err("failed to create session entry")?;

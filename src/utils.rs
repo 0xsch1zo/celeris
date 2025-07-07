@@ -1,6 +1,6 @@
-use color_eyre::eyre::OptionExt;
+use color_eyre::eyre::{Context, OptionExt};
 use color_eyre::{self, Result};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 pub fn file_name(path: &Path) -> Result<String> {
     Ok(path
@@ -27,4 +27,15 @@ pub fn shorten_path_string(path: &Path) -> Result<String> {
         + path
             .to_str()
             .ok_or_eyre(format!("Invalid utf-8 encoding of path: {path:?}"))?)
+}
+
+pub fn expand_path(mut path: PathBuf) -> Result<PathBuf> {
+    if path.starts_with("~") {
+        let home = dirs::home_dir()
+            .ok_or_eyre("home directory not found despite home shell expansion used")
+            .wrap_err("failed to expand ~ sign")?;
+        let stripped_path = path.strip_prefix("~").wrap_err("failed to expand ~ sign")?;
+        path = home.join(stripped_path);
+    }
+    Ok(path)
 }
