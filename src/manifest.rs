@@ -1,6 +1,7 @@
 use crate::pdirs;
 use crate::utils;
 use color_eyre::eyre::{self, Context};
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::error;
 use std::fmt::Display;
@@ -72,23 +73,26 @@ impl From<pdirs::Error> for Error {
     }
 }
 
-#[derive(Serialize, Deserialize)]
-pub struct Manifest {
-    #[serde(default = "default_entries")]
-    entries: Vec<Entry>,
+trait Codec<T: DeserializeOwned + Serialize> {
+    fn serialize_to_file(&self, object: &T, path: &Path) -> Result<(), Error>;
+    fn deserialize_from_file(&self, path: &Path) -> Result<T, Error>;
 }
 
-#[derive(Serialize, Deserialize)]
-pub struct Entry {
-    name: String,
-    session_path: PathBuf,
-    script_path: PathBuf,
-}
+struct TomlCodec {}
 
-impl PartialEq for Entry {
-    fn eq(&self, other: &Self) -> bool {
-        // TODO: handle same script_paths
-        self.name == other.name
+impl<T: DeserializeOwned + Serialize> Codec<T> for TomlCodec {
+    fn serialize_to_file(&self, object: &T, path: &Path) -> Result<(), Error> {
+        let object_str = toml::to_string(object)?;
+        fs::write(&path, object_str).map_err(|e| {
+            Error::FSOperationFaiure("failed to write to manifest file".to_owned(), e)
+        })?;
+        Ok(())
+    }
+
+    fn deserialize_from_file(&self, path: &Path) -> Result<T, Error> {
+        let object_str = fs::read_to_string(path)
+            .map_err(|e| Error::FSOperationFaiure("couldn't read manifest file".to_owned(), e))?;
+        Ok(toml::from_str(&object_str)?)
     }
 }
 
@@ -124,12 +128,30 @@ impl Entry {
     }
 }
 
-fn default_entries() -> Vec<Entry> {
-    Vec::new()
+#[derive(Serialize, Deserialize)]
+pub struct Manifest {
+    entries: Vec<Entry>,
+    #[serde(
+        skip_serializing,
+        skip_deserializing,
+        default = "default_manifest_codec"
+    )]
+    codec: Box<dyn Codec<Manifest>>,
 }
 
-// TODO: handle the case when a new repo with the same name is added but with a different path
-// This is possilbe because RepoManager disambiguates only the currenly found repos
+impl Default for Manifest {
+    fn default() -> Self {
+        Self {
+            entries: Vec::new(),
+            codec: Box::new(TomlCodec {}),
+        }
+    }
+}
+
+fn default_manifest_codec() -> Box<dyn Codec<Manifest>> {
+    Box::new(TomlCodec {})
+}
+
 impl Manifest {
     fn manifest_path() -> Result<PathBuf, Error> {
         const MANIFEST_FILE: &'static str = "manifest.toml";
@@ -147,27 +169,24 @@ impl Manifest {
         Ok(scripts_path)
     }
 
+    fn serialize(&self) -> Result<(), Error> {
+        let path = Self::manifest_path()?;
+        self.codec.serialize_to_file(self, &path)
+    }
+
+    fn deserialize(codec: Box<dyn Codec<Manifest>>) -> Result<Manifest, Error> {
+        let path = Self::manifest_path()?;
+        codec.deserialize_from_file(&path)
+    }
+
+    // TODO: maybe handle the manifest file being in a bad state
     pub fn new() -> Result<Self, Error> {
         let path = Self::manifest_path()?;
         if path.exists() {
-            let manifest = fs::read_to_string(path).map_err(|e| {
-                Error::FSOperationFaiure("couldn't read manifest file".to_owned(), e)
-            })?;
-            Ok(toml::from_str(&manifest)?)
+            Self::deserialize(Manifest::default().codec)
         } else {
-            Ok(Manifest {
-                entries: Vec::new(),
-            })
+            Ok(Manifest::default())
         }
-    }
-
-    fn serialize(&self) -> Result<(), Error> {
-        let manifest = toml::to_string(&self)?;
-        let path = Self::manifest_path()?;
-        fs::write(&path, &manifest).map_err(|e| {
-            Error::FSOperationFaiure("failed to write to manifest file".to_owned(), e)
-        })?;
-        Ok(())
     }
 
     pub fn deduce_name(&self, path: &Path) -> Result<String, Error> {
@@ -230,5 +249,136 @@ impl Manifest {
 
         Self::serialize(self)?;
         Ok(())
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Entry {
+    name: String,
+    session_path: PathBuf,
+    script_path: PathBuf,
+}
+
+impl PartialEq for Entry {
+    fn eq(&self, other: &Self) -> bool {
+        // TODO: handle same script_paths
+        self.name == other.name
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use color_eyre::Result;
+
+    struct MockCodec {}
+
+    impl Codec<Manifest> for MockCodec {
+        fn serialize_to_file(
+            &self,
+            _object: &Manifest,
+            _path: &Path,
+        ) -> std::result::Result<(), Error> {
+            Ok(())
+        }
+
+        fn deserialize_from_file(&self, _path: &Path) -> std::result::Result<Manifest, Error> {
+            Ok(Manifest::default())
+        }
+    }
+
+    fn test_entry(name: &str) -> Result<Entry> {
+        Entry::new(name.to_owned(), PathBuf::new())
+    }
+
+    fn manifest_with_names(names: Vec<&'static str>) -> Result<Manifest> {
+        let entries = names
+            .into_iter()
+            .map(|name| test_entry(name))
+            .collect::<Result<Vec<_>>>()?;
+        let manifest = Manifest {
+            entries: entries,
+            codec: Box::new(MockCodec {}),
+        };
+        Ok(manifest)
+    }
+
+    #[test]
+    fn entry() -> Result<()> {
+        let manifest = manifest_with_names(vec!["test"])?;
+        let entry = manifest.entry("test");
+        assert_eq!(entry, Some(&test_entry("test")?));
+        Ok(())
+    }
+
+    #[test]
+    fn contains() -> Result<()> {
+        let manifest = manifest_with_names(vec!["test1", "test2"])?;
+        assert_eq!(manifest.contains("test1"), true);
+        assert_eq!(manifest.contains("test2"), true);
+        Ok(())
+    }
+
+    #[test]
+    fn remove() -> Result<()> {
+        let mut manifest = manifest_with_names(vec!["test"])?;
+        manifest.remove("test")?;
+        assert_eq!(manifest.contains("test"), false);
+        Ok(())
+    }
+
+    mod push {
+        use super::*;
+
+        #[test]
+        fn normal() -> Result<()> {
+            let mut manifest = manifest_with_names(Vec::new())?;
+            manifest.push(test_entry("test")?)?;
+            assert_eq!(manifest.contains("test"), true);
+            Ok(())
+        }
+
+        #[test]
+        fn duplicate() -> Result<()> {
+            let mut manifest = manifest_with_names(vec!["test"])?;
+            let result = manifest.push(test_entry("test")?);
+            assert_eq!(result.is_err(), true);
+            Ok(())
+        }
+    }
+
+    mod deduce_name {
+        use super::*;
+
+        #[test]
+        fn normal() -> Result<()> {
+            let manifest = manifest_with_names(Vec::new())?;
+            let name = manifest.deduce_name(Path::new("/test/test"))?;
+            assert_eq!(name, "test");
+            Ok(())
+        }
+
+        #[test]
+        fn simple_duplicate() -> Result<()> {
+            let manifest = manifest_with_names(vec!["test"])?;
+            let name = manifest.deduce_name(Path::new("/test/test"))?;
+            assert_eq!(name, "test/test");
+            Ok(())
+        }
+
+        #[test]
+        fn undeducable_duplicate() -> Result<()> {
+            let manifest = manifest_with_names(vec!["test"])?;
+            let _ = manifest.deduce_name(Path::new("/test")).unwrap_err();
+            Ok(())
+        }
+
+        #[test]
+        fn multiple() -> Result<()> {
+            let manifest = manifest_with_names(vec!["test", "test/test"])?;
+            let name = manifest.deduce_name(Path::new("/test/test/test"))?;
+            assert_eq!(name, "test/test/test");
+            Ok(())
+        }
     }
 }
