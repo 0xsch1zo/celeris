@@ -1,6 +1,6 @@
 pub mod config;
-mod internals_dir;
 pub mod manifest;
+mod pdirs;
 pub mod repo_search;
 pub mod script;
 pub mod session_manager;

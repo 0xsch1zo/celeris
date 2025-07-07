@@ -1,10 +1,76 @@
-use crate::internals_dir::internals_dir;
+use crate::pdirs;
 use crate::utils;
-use color_eyre::eyre::{Context, OptionExt, Result, eyre};
+use color_eyre::eyre::{self, Context};
 use serde::{Deserialize, Serialize};
+use std::error;
+use std::fmt::Display;
 use std::fs;
+use std::io;
 use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
+
+#[derive(Debug)]
+pub enum Error {
+    NotFound(String),
+    AlreadyExists(String),
+    CoreDirectoryErr(pdirs::Error),
+    FSOperationFaiure(String, io::Error), // break down to pieces
+    SerializeFailure(toml::ser::Error),
+    DeserializeFailure(toml::de::Error),
+    DeductionFilenameErr(Box<dyn error::Error + Send + Sync>),
+}
+
+impl Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let message = match self {
+            Self::NotFound(entry) => format!("manifest entry not found: {entry}"),
+            Self::AlreadyExists(entry) => format!("manifest entry already exists: {entry}"),
+            Self::CoreDirectoryErr(_) => {
+                "an error occured while operating on a directory core to the manifest".to_owned()
+            }
+            Self::FSOperationFaiure(desc, _) => {
+                format!("manifest file operation failed: {desc}")
+            }
+            Self::SerializeFailure(_) => "failed to serialize the manifest".to_owned(),
+            Self::DeserializeFailure(_) => "failed to deserialize the manifest".to_owned(),
+            Self::DeductionFilenameErr(_) => {
+                "failed to get a file name while deducing the name of a session".to_owned()
+            }
+        };
+        write!(f, "{message}")
+    }
+}
+
+impl error::Error for Error {
+    fn source(&self) -> Option<&(dyn error::Error + 'static)> {
+        match self {
+            Self::FSOperationFaiure(_, e) => Some(e),
+            Self::SerializeFailure(e) => Some(e),
+            Self::DeserializeFailure(e) => Some(e),
+            Self::CoreDirectoryErr(e) => Some(e),
+            Self::DeductionFilenameErr(e) => Some(&**e),
+            _ => None,
+        }
+    }
+}
+
+impl From<toml::ser::Error> for Error {
+    fn from(value: toml::ser::Error) -> Self {
+        Error::SerializeFailure(value)
+    }
+}
+
+impl From<toml::de::Error> for Error {
+    fn from(value: toml::de::Error) -> Self {
+        Error::DeserializeFailure(value)
+    }
+}
+
+impl From<pdirs::Error> for Error {
+    fn from(value: pdirs::Error) -> Self {
+        Error::CoreDirectoryErr(value)
+    }
+}
 
 #[derive(Serialize, Deserialize)]
 pub struct Manifest {
@@ -28,7 +94,7 @@ impl PartialEq for Entry {
 
 // TODO: maybe use a map
 impl Entry {
-    pub fn new(name: String, session_path: PathBuf) -> Result<Self> {
+    pub fn new(name: String, session_path: PathBuf) -> eyre::Result<Self> {
         // TODO: use unique id instead of hash, or maybe not, idk think about it
         let hash = format!(
             "{:x}",
@@ -36,6 +102,7 @@ impl Entry {
                 utils::path_to_string(session_path.as_path()).wrap_err("failed to hash path")?,
             )
         );
+
         let script_path = Manifest::scripts_path()?.join(hash).with_extension("rhai");
         Ok(Self {
             name,
@@ -64,26 +131,29 @@ fn default_entries() -> Vec<Entry> {
 // TODO: handle the case when a new repo with the same name is added but with a different path
 // This is possilbe because RepoManager disambiguates only the currenly found repos
 impl Manifest {
-    fn manifest_path() -> Result<PathBuf> {
+    fn manifest_path() -> Result<PathBuf, Error> {
         const MANIFEST_FILE: &'static str = "manifest.toml";
-        Ok(internals_dir()?.join(MANIFEST_FILE))
+        Ok(pdirs::internals_dir()?.join(MANIFEST_FILE))
     }
 
-    fn scripts_path() -> Result<PathBuf> {
+    fn scripts_path() -> Result<PathBuf, Error> {
         const SCRIPTS_DIR: &'static str = "scripts";
-        let scripts_path = internals_dir()?.join(SCRIPTS_DIR);
+        let scripts_path = pdirs::internals_dir()?.join(SCRIPTS_DIR);
         if !scripts_path.exists() {
-            fs::create_dir(&scripts_path)
-                .wrap_err_with(|| format!("failed to create scripts dir at {scripts_path:?}"))?;
+            fs::create_dir(&scripts_path).map_err(|e| {
+                Error::FSOperationFaiure("failed to create scripts dir".to_owned(), e)
+            })?
         }
         Ok(scripts_path)
     }
 
-    pub fn new() -> Result<Self> {
+    pub fn new() -> Result<Self, Error> {
         let path = Self::manifest_path()?;
         if path.exists() {
-            let manifest = fs::read_to_string(path).wrap_err("couldn't read manifest file")?;
-            Ok(toml::from_str(&manifest).wrap_err("failed to deserialize manifest")?)
+            let manifest = fs::read_to_string(path).map_err(|e| {
+                Error::FSOperationFaiure("couldn't read manifest file".to_owned(), e)
+            })?;
+            Ok(toml::from_str(&manifest)?)
         } else {
             Ok(Manifest {
                 entries: Vec::new(),
@@ -91,20 +161,21 @@ impl Manifest {
         }
     }
 
-    fn serialize(&self) -> Result<()> {
-        let manifest = toml::to_string(&self).wrap_err("failed to serialize manifest")?;
+    fn serialize(&self) -> Result<(), Error> {
+        let manifest = toml::to_string(&self)?;
         let path = Self::manifest_path()?;
-        fs::write(&path, &manifest)
-            .wrap_err_with(|| format!("failed to write to manifest file at: {path:?}",))?;
+        fs::write(&path, &manifest).map_err(|e| {
+            Error::FSOperationFaiure("failed to write to manifest file".to_owned(), e)
+        })?;
         Ok(())
     }
 
-    pub fn deduce_name(&self, path: &Path) -> Result<String> {
+    pub fn deduce_name(&self, path: &Path) -> Result<String, Error> {
         if self.entries.iter().any(|e| e.session_path == path) {
-            return Err(eyre!("manifest: entry already exists with this path"));
+            return Err(Error::AlreadyExists(path.to_string_lossy().to_string()));
         }
 
-        let mut name = utils::file_name(path).wrap_err("failed to deduce session name")?;
+        let mut name = utils::file_name(path).map_err(|e| Error::DeductionFilenameErr(e.into()))?;
         let ancestors = path.ancestors().collect::<Vec<_>>();
         let ancestors = ancestors
             .iter()
@@ -112,8 +183,8 @@ impl Manifest {
             .enumerate()
             .take_while(|(i, _)| *i < ancestors.len() - 2) // acount for skip
             .map(|(_, a)| a)
-            .map(|a| utils::file_name(a))
-            .collect::<Result<Vec<_>>>()?;
+            .map(|a| utils::file_name(a).map_err(|e| Error::DeductionFilenameErr(e.into())))
+            .collect::<Result<Vec<_>, _>>()?;
 
         let _ = ancestors.into_iter().try_for_each(|a| {
             if self.contains(&name) {
@@ -125,15 +196,15 @@ impl Manifest {
         });
 
         if self.contains(&name) {
-            return Err(eyre!("manifest: entry already exists with this path"));
+            return Err(Error::AlreadyExists(name));
         }
 
         Ok(name)
     }
 
-    pub fn push(&mut self, entry: Entry) -> Result<()> {
+    pub fn push(&mut self, entry: Entry) -> Result<(), Error> {
         if self.entries.contains(&entry) {
-            return Err(eyre!("manifest entry already exists"));
+            return Err(Error::AlreadyExists(entry.name));
         }
 
         self.entries.push(entry);
@@ -149,12 +220,12 @@ impl Manifest {
         self.entries.iter().find(|s| s.name == name).is_some()
     }
 
-    pub fn remove(&mut self, name: &str) -> Result<()> {
+    pub fn remove(&mut self, name: &str) -> Result<(), Error> {
         self.entries.remove(
             self.entries
                 .iter()
                 .position(|e| e.name == name)
-                .ok_or_eyre("manifest: entry not found")?,
+                .ok_or(Error::NotFound(name.to_owned()))?,
         );
 
         Self::serialize(self)?;

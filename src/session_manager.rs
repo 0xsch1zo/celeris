@@ -70,9 +70,11 @@ impl<'a> SessionManager<'a> {
                 .join(props.path);
         }
         let name = props.name(&self.manifest)?;
-        let entry =
-            manifest::Entry::new(name.clone(), props.path).wrap_err("failed to create session")?;
-        self.manifest.push(entry)?;
+        let entry = manifest::Entry::new(name.clone(), props.path)
+            .wrap_err("failed to create session entry")?;
+        self.manifest
+            .push(entry)
+            .wrap_err("failed to add session")?;
         let entry = self.entry(&name)?; // only ref
         script::edit(entry, &self.config)?;
         Ok(())
@@ -95,7 +97,9 @@ impl<'a> SessionManager<'a> {
     }
 
     pub fn remove(&mut self, name: &str) -> Result<()> {
-        self.manifest.remove(name)?;
+        self.manifest
+            .remove(name)
+            .wrap_err("failed to remove session")?;
         Ok(())
     }
 }

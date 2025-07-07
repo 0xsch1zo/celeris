@@ -1,4 +1,4 @@
-use crate::utils;
+use crate::pdirs;
 use color_eyre::eyre::Context;
 use color_eyre::{Result, eyre};
 use eyre::eyre;
@@ -47,7 +47,7 @@ pub enum PathType {
 impl Config {
     pub fn new() -> Result<Self> {
         const CONFIG_FILE: &'static str = "config.toml";
-        let config_path = utils::config_dir()?.join(CONFIG_FILE);
+        let config_path = pdirs::config_dir()?.join(CONFIG_FILE);
         let config = fs::read_to_string(&config_path).wrap_err("main sesh config not found")?;
 
         let config: Config = toml::from_str(&config).wrap_err("parsing error")?;
