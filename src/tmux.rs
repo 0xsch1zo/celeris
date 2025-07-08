@@ -51,9 +51,9 @@ pub enum SplitSize {
     Fixed(u32),
 }
 
-enum AttachState {
-    Attached,
-    NotAttached,
+enum TerminalState {
+    InTmux,
+    Normal,
 }
 
 #[derive(Clone, Debug)]
@@ -102,18 +102,18 @@ impl Session {
     }
 
     // Checks if in the current environment there is an attached session
-    fn tmux_attached() -> Result<AttachState> {
+    fn terminal_state() -> Result<TerminalState> {
         Ok(match env::var("TMUX") {
-            Ok(_) => AttachState::Attached,
-            Err(env::VarError::NotPresent) => AttachState::NotAttached,
+            Ok(_) => TerminalState::InTmux,
+            Err(env::VarError::NotPresent) => TerminalState::Normal,
             Err(err) => return Err(err).wrap_err("failed to check for active tmux session"),
         })
     }
 
-    fn attach_core(&self, attached: AttachState) -> Result<()> {
+    fn attach_core(&self, attached: TerminalState) -> Result<()> {
         let mut command = match attached {
-            AttachState::Attached => self.target("switch-client")?,
-            AttachState::NotAttached => self.target("attach-session")?,
+            TerminalState::InTmux => self.target("switch-client")?,
+            TerminalState::Normal => self.target("attach-session")?,
         };
 
         let mut tmux_handle = command
@@ -147,7 +147,7 @@ impl Session {
     }
 
     pub fn attach(&self) -> Result<()> {
-        self.attach_core(Self::tmux_attached()?)?;
+        self.attach_core(Self::terminal_state()?)?;
         Ok(())
     }
 
@@ -479,7 +479,7 @@ mod tests {
             Ok(())
         }
 
-        fn attach_test(attached: AttachState) -> Result<()> {
+        fn attach_test(attached: TerminalState) -> Result<()> {
             let session = testing_session()?;
             session.attach_core(attached)?;
             let mut command = session.target("display-message")?;
@@ -489,9 +489,17 @@ mod tests {
             Ok(())
         }
 
+        #[test_with::env(TMUX)]
         #[test]
-        fn attach_tmux() -> Result<()> {
-            attach_test(AttachState::Attached)?;
+        fn attach_in_tmux() -> Result<()> {
+            attach_test(TerminalState::InTmux)?;
+            Ok(())
+        }
+
+        #[test_with::no_env(TMUX)]
+        #[test]
+        fn attach_not_in_tmux() -> Result<()> {
+            attach_test(TerminalState::Normal)?;
             Ok(())
         }
     }
