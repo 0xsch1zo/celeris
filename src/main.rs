@@ -47,7 +47,7 @@ fn main() -> Result<()> {
             let repos = repo_search::search(&config)?;
             repos.iter().for_each(|r| println!("{r}"));
         }
-        Commands::ListSessions => {}
+        Commands::ListSessions => session_manager.list(),
         Commands::NewSession { name, path } => {
             let props = SessionProperties::from(name, path);
             session_manager.create(props)?;

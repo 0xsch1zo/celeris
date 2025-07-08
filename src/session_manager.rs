@@ -6,6 +6,7 @@ use crate::utils;
 use color_eyre::Result;
 use color_eyre::eyre::OptionExt;
 use color_eyre::eyre::WrapErr;
+use itertools::Itertools;
 use std::path::PathBuf;
 
 #[derive(Clone)]
@@ -98,5 +99,10 @@ impl<'a> SessionManager<'a> {
             .remove(name)
             .wrap_err("failed to remove session")?;
         Ok(())
+    }
+
+    pub fn list(&self) {
+        let sessions = self.manifest.list().iter().join("\n");
+        println!("{sessions}")
     }
 }

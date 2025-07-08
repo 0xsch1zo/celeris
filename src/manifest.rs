@@ -250,6 +250,10 @@ impl Manifest {
         Self::serialize(self)?;
         Ok(())
     }
+
+    pub fn list(&self) -> Vec<&String> {
+        self.entries.iter().map(|e| &e.name).collect::<Vec<_>>()
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
