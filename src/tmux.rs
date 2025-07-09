@@ -1,12 +1,13 @@
+use crate::utils;
 use color_eyre::{
     Result,
     eyre::{Context, ContextCompat, OptionExt, eyre},
 };
-use std::process;
 use std::process::Stdio;
 use std::str;
 use std::sync::{Arc, Mutex};
 use std::{env, io::Read};
+use std::{path::Path, process};
 
 // TODO: provide a custom tmux command builder for special cases
 // TODO: handle tmux not being available
@@ -48,12 +49,17 @@ pub enum Direction {
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub enum SplitSize {
     Percentage(u8),
-    Fixed(u32),
+    Absolute(u32),
 }
 
 enum TerminalState {
     InTmux,
     Normal,
+}
+
+pub enum SessionRoot<'a> {
+    Default,
+    Custom(&'a Path),
 }
 
 #[derive(Clone, Debug)]
@@ -65,7 +71,7 @@ pub struct Session {
 
 impl Session {
     // Can't run this if in tmux session already
-    pub fn new(session_name: &str) -> Result<Arc<Self>> {
+    pub fn new(session_name: &str, root: SessionRoot) -> Result<Arc<Self>> {
         if Self::target_exists(session_name)? {
             return Err(eyre!("session with name: {session_name}, already exists"));
         }
@@ -81,6 +87,11 @@ impl Session {
             "-F",
             &format!("{}{}{}", "#{window_id}", DELIM, "#{session_id}"),
         ]);
+
+        if let SessionRoot::Custom(root) = root {
+            command.args(["-c", &utils::path_to_string(root)?]);
+        }
+
         let output = execute(command)?;
         let (default_window_id, session_id) =
             output.trim().split_once(DELIM).ok_or_eyre(format!(
@@ -151,19 +162,14 @@ impl Session {
         Ok(())
     }
 
-    pub fn new_window(
-        self: &Arc<Self>,
-        name: Option<&str>,
-        shell_command: Option<&str>,
-    ) -> Result<Arc<Window>> {
-        let window_core = WindowCore::new(Arc::clone(self), name, shell_command)?;
+    fn register_window(&self, window: &WindowCore) -> Result<()> {
         let mut count = self.window_count.lock().unwrap();
         if *count == 0 {
             let target = format!("{}:{}", self.session_id, self.default_window_id);
-            window_core.move_kill(&target)?;
+            window.move_kill(&target)?;
         }
         *count += 1;
-        Ok(Window::new(window_core))
+        Ok(())
     }
 
     fn target_exists(target: &str) -> Result<bool> {
@@ -178,14 +184,14 @@ impl Session {
 }
 
 // just a better interface can't int
-/*#[derive(Clone, Debug)]
-pub struct WindowBuilder<'a> {
-    name: Option<&'a str>,
-    shell_command: Option<&'a str>,
+#[derive(Clone, Debug)]
+pub struct WindowBuilder {
+    name: Option<String>,
+    shell_command: Option<String>,
     session: Arc<Session>,
 }
 
-impl<'a> WindowBuilder<'a> {
+impl WindowBuilder {
     pub fn new(session: &Arc<Session>) -> Self {
         Self {
             name: None,
@@ -194,20 +200,62 @@ impl<'a> WindowBuilder<'a> {
         }
     }
 
-    pub fn name(mut self, name: &'a str) -> Self {
+    pub fn name(&mut self, name: String) -> &mut Self {
         self.name = Some(name);
         self
     }
 
-    pub fn shell_command(mut self, command: &'a str) -> Self {
+    pub fn shell_command(&mut self, command: String) -> &mut Self {
         self.shell_command = Some(command);
         self
     }
 
-    pub fn build(self) -> Result<Arc<Window>> {
-        self.session.new_window(self.name, self.shell_command)
+    fn parse_options(&self) -> Vec<&str> {
+        let mut options = Vec::new();
+        if let Some(name) = &self.name {
+            options.extend(["-n", name]);
+        }
+
+        if let Some(shell_command) = &self.shell_command {
+            options.push(shell_command);
+        }
+        options
     }
-}*/
+
+    fn create_window(&self) -> Result<WindowCore> {
+        const DELIM: &str = "|";
+        let mut command = self.session.target("new-window")?;
+        command.args([
+            "-P",
+            "-F",
+            &format!("{}{}{}", "#{pane_id}", DELIM, "#{window_id}"),
+        ]);
+
+        command.args(self.parse_options());
+
+        let output = execute(command)?;
+        let (default_pane_id, window_id) = output.trim().split_once(DELIM).ok_or_eyre(format!(
+            "failed to create session, couldn't parse session or window id: {}",
+            output
+        ))?;
+
+        Ok(WindowCore::new(
+            Arc::clone(&self.session),
+            window_id,
+            default_pane_id,
+        ))
+    }
+
+    pub fn build(&mut self) -> Result<Arc<Window>> {
+        let window_core = self.create_window()?;
+        self.session.register_window(&window_core)?;
+
+        if let Some(_) = self.name {
+            window_core.set_option("allow-rename", "off")?;
+        }
+        Ok(Window::new(window_core))
+    }
+}
 
 #[derive(Clone, Debug)]
 struct WindowCore {
@@ -218,41 +266,14 @@ struct WindowCore {
 }
 
 impl WindowCore {
-    fn new(session: Arc<Session>, name: Option<&str>, shell_command: Option<&str>) -> Result<Self> {
-        const DELIM: &str = "|";
-        let mut command = session.target("new-window")?;
-        command.args([
-            "-P",
-            "-F",
-            &format!("{}{}{}", "#{pane_id}", DELIM, "#{window_id}"),
-        ]);
-
-        if let Some(name) = name {
-            command.args(["-n", name]);
-        }
-        if let Some(shell_command) = shell_command {
-            command.arg(shell_command);
-        }
-
-        let output = execute(command)?;
-        let (default_pane_id, window_id) = output.trim().split_once(DELIM).ok_or_eyre(format!(
-            "failed to create session, couldn't parse session or window id: {}",
-            output
-        ))?;
-
+    fn new(session: Arc<Session>, window_id: &str, default_pane_id: &str) -> Self {
         let target = format!("{}:{}", session.session_id, window_id);
-        let window = Self {
+        Self {
             session: session,
             window_id: window_id.to_string(),
             default_pane_id: default_pane_id.to_string(),
             target,
-        };
-
-        if let Some(_) = name {
-            window.set_option("allow-rename", "off")?;
         }
-
-        Ok(window)
     }
 
     fn target(&self, command: &str) -> Result<process::Command> {
@@ -309,9 +330,9 @@ impl Window {
         })
     }
 
-    /*pub fn builder(session: &Arc<Session>) -> WindowBuilder {
+    pub fn builder(session: &Arc<Session>) -> WindowBuilder {
         WindowBuilder::new(session)
-    }*/
+    }
 
     pub fn default_pane(&self) -> Arc<Pane> {
         Arc::clone(&self.default_pane)
@@ -323,6 +344,66 @@ impl Window {
 
     pub fn select(&self) -> Result<()> {
         self.window_core.select()
+    }
+}
+
+pub struct SplitBuilder {
+    sibling_pane: Arc<Pane>,
+    direction: Direction,
+    size: Option<SplitSize>,
+}
+
+impl SplitBuilder {
+    fn new(sibling_pane: &Arc<Pane>, direction: Direction) -> Self {
+        Self {
+            direction: direction,
+            size: None,
+            sibling_pane: Arc::clone(sibling_pane),
+        }
+    }
+
+    pub fn size(&mut self, size: SplitSize) -> &mut Self {
+        self.size = Some(size);
+        self
+    }
+
+    // TODO: maybe add support for below 3.1
+    // break this up if more functionality is added
+    fn prepare_options(&self) -> Result<Vec<String>> {
+        let mut options = Vec::new();
+        let Some(size) = self.size else {
+            return Ok(options);
+        };
+        match size {
+            SplitSize::Percentage(percentage) if percentage <= 100 => {
+                options.extend([String::from("-l"), format!("{percentage}%")]);
+            }
+            SplitSize::Percentage(percentage) => {
+                return Err(eyre!("Percentage amount above 100: {percentage}"));
+            }
+            SplitSize::Absolute(absolute) => {
+                options.extend([String::from("-l"), absolute.to_string()])
+            }
+        };
+
+        Ok(options)
+    }
+
+    fn split_command(&self) -> Result<process::Command> {
+        let mut command = self.sibling_pane.target("split-window")?;
+        command.args(["-P", "-F", "#{pane_id}"]);
+        match self.direction {
+            Direction::Vertical => command.arg("-v"),
+            Direction::Horizontal => command.arg("-h"),
+        };
+
+        command.args(self.prepare_options()?);
+        Ok(command)
+    }
+
+    pub fn build(&self) -> Result<Pane> {
+        let output = execute(self.split_command()?)?;
+        Ok(Pane::new(&self.sibling_pane.window, output.trim()))
     }
 }
 
@@ -348,38 +429,9 @@ impl Pane {
         tmux_target_command(&self.target, command)
     }
 
-    fn split_command(&self, split: Direction) -> Result<process::Command> {
-        let mut command = self.target("split-window")?;
-        command.args(["-P", "-F", "#{pane_id}"]);
-        match split {
-            Direction::Vertical => command.arg("-v"),
-            Direction::Horizontal => command.arg("-h"),
-        };
-
-        Ok(command)
-    }
-
     // No reasson to return arc here because it's owned which is fine with rhai
-    pub fn split(&self, direction: Direction) -> Result<Pane> {
-        let output = execute(self.split_command(direction)?)?;
-        Ok(Pane::new(&self.window, output.trim()))
-    }
-
-    // TODO: maybe add support for below 3.1
-    pub fn split_with_size(&self, direction: Direction, size: SplitSize) -> Result<Pane> {
-        let mut command = self.split_command(direction)?;
-        match size {
-            SplitSize::Percentage(percentage) if percentage <= 100 => {
-                command.args(["-l", &format!("{percentage}%")])
-            }
-            SplitSize::Percentage(percentage) => {
-                return Err(eyre!("Percentage amount above 100: {percentage}"));
-            }
-            SplitSize::Fixed(fixed) => command.args(["-l", &fixed.to_string()]),
-        };
-
-        let output = execute(command)?;
-        Ok(Pane::new(&self.window, output.trim()))
+    pub fn split_builder(self: &Arc<Self>, direction: Direction) -> SplitBuilder {
+        SplitBuilder::new(self, direction)
     }
 
     pub fn select(&self) -> Result<()> {
@@ -399,6 +451,8 @@ impl Pane {
 #[cfg(test)]
 mod tests {
     use super::*;
+    const TESTING_SESSION: &str = "__sesh_testing";
+
     fn kill_session(session: &Session) -> Result<()> {
         execute(Session::target(session, "kill-session")?)?;
         Ok(())
@@ -412,8 +466,7 @@ mod tests {
     }
 
     fn testing_session() -> Result<Arc<Session>> {
-        // Generate "random" id. Because tests are run in parallel
-        Ok(Session::new("__sesh_testing")?)
+        Ok(Session::new(TESTING_SESSION, SessionRoot::Default)?)
     }
 
     fn selected_pane_id(target: &str) -> Result<String> {
@@ -465,10 +518,20 @@ mod tests {
         }
 
         #[test]
+        fn new_session_custom_root() -> Result<()> {
+            let session = Session::new(TESTING_SESSION, SessionRoot::Custom(Path::new("/")))?;
+            let mut command = session.target("display-message")?;
+            command.args(["-p", "#{pane_current_path}"]);
+            let output = execute(command)?;
+            assert_eq!(output.trim(), "/");
+            Ok(())
+        }
+
+        #[test]
         fn new_window() -> Result<()> {
             let session = testing_session()?;
 
-            let window = session.new_window(None, None)?;
+            let window = Window::builder(&session).build()?;
             assert!(
                 Session::target_exists(&window.window_core.target)?,
                 "window doesn't exist"
@@ -510,7 +573,7 @@ mod tests {
         #[test]
         fn set_option() -> Result<()> {
             let session = testing_session()?;
-            let window = session.new_window(None, None)?;
+            let window = Window::builder(&session).build()?;
             let option = ("allow-rename", "off");
             window.window_core.set_option(option.0, option.1)?;
 
@@ -528,8 +591,8 @@ mod tests {
         #[test]
         fn select() -> Result<()> {
             let session = testing_session()?;
-            let window1 = session.new_window(None, None)?;
-            let _window2 = session.new_window(None, None)?;
+            let window1 = Window::builder(&session).build()?;
+            let _window2 = Window::builder(&session).build()?;
             window1.select()?;
             let mut command = session.target("display-message")?;
             command.args(["-p", "#{window_id}"]);
@@ -544,7 +607,7 @@ mod tests {
         #[test]
         fn even_out() -> Result<()> {
             let session = testing_session()?;
-            let window = session.new_window(None, None)?;
+            let window = Window::builder(&session).build()?;
             window.event_out(Direction::Horizontal)?;
             window.event_out(Direction::Vertical)?;
             Ok(())
@@ -553,7 +616,7 @@ mod tests {
         #[test]
         fn default_pane() -> Result<()> {
             let session = testing_session()?;
-            let window = session.new_window(None, None)?;
+            let window = Window::builder(&session).build()?;
             let pane = window.default_pane();
             assert_eq!(Session::target_exists(&pane.target)?, true);
             Ok(())
@@ -566,9 +629,9 @@ mod tests {
         #[test]
         fn split() -> Result<()> {
             let session = testing_session()?;
-            let window = session.new_window(None, None)?;
+            let window = Window::builder(&session).build()?;
             let pane1 = window.default_pane();
-            let pane2 = pane1.split(Direction::Vertical)?;
+            let pane2 = pane1.split_builder(Direction::Vertical).build()?;
 
             assert_eq!(Session::target_exists(&pane1.target)?, true);
             assert_eq!(Session::target_exists(&pane2.target)?, true);
@@ -581,9 +644,9 @@ mod tests {
         #[test]
         fn select() -> Result<()> {
             let session = testing_session()?;
-            let window = session.new_window(None, None)?;
+            let window = Window::builder(&session).build()?;
             let pane1 = window.default_pane();
-            let _pane2 = pane1.split(Direction::Vertical);
+            let _pane2 = pane1.split_builder(Direction::Vertical).build();
             pane1.select()?;
             let mut command = session.target("display-message")?;
             command.args(["-p", "#{pane_id}"]);
@@ -596,7 +659,7 @@ mod tests {
         #[test]
         fn run_command() -> Result<()> {
             let session = testing_session()?;
-            let window = session.new_window(None, None)?;
+            let window = Window::builder(&session).build()?;
             //should run until Ctrl+C or the session is killled. Will work
             // only on most systems. Testing this without getting execution
             // is probably impossible
