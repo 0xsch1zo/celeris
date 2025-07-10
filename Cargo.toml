@@ -9,13 +9,11 @@ serde = { version = "1.0.219", features = ["derive"] }
 walkdir = "2.5.0"
 dirs = "6.0.0"
 git2 = "0.20.2"
-nucleo = "0.5.0"
-ratatui = "0.29.0"
-crossterm = "0.29.0"
 color-eyre = "0.6.5"
-tui-input = "0.12.1"
 md5 = "0.7.0"
-throbber-widgets-tui = "0.8.0"
 itertools = "0.14.0"
 rhai = { version = "1.22.2", features = ["sync"] }
 clap = { version = "4.5.40", features = ["derive"] }
+
+[dev-dependencies]
+test-with = "0.15.2"
