@@ -1,0 +1,6 @@
+[test-groups]
+tmux = { max-threads = 1 }
+
+[[profile.default.overrides]]
+filter = "test(tmux::)"
+test-group = "tmux"
