@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::error;
 use std::fmt::Display;
 use std::fs;
+use std::fs::File;
 use std::io;
 use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
@@ -96,23 +97,44 @@ impl<T: DeserializeOwned + Serialize> Codec<T> for TomlCodec {
     }
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Entry {
+    name: String,
+    session_path: PathBuf,
+    script_path: PathBuf,
+}
+
+impl PartialEq for Entry {
+    fn eq(&self, other: &Self) -> bool {
+        // TODO: handle same script_paths
+        self.name == other.name
+    }
+}
+
 // TODO: maybe use a map
 impl Entry {
     pub fn new(name: String, session_path: PathBuf) -> eyre::Result<Self> {
-        // TODO: use unique id instead of hash, or maybe not, idk think about it
-        let hash = format!(
-            "{:x}",
-            md5::compute(
-                utils::path_to_string(session_path.as_path()).wrap_err("failed to hash path")?,
-            )
-        );
+        let script_path = Self::calc_script_path(&session_path)?;
 
-        let script_path = Manifest::scripts_path()?.join(hash).with_extension("rhai");
+        File::create_new(&script_path).wrap_err(format!(
+            "failed to create a script file for session: {name}"
+        ))?;
+
+        // TODO: use unique id instead of hash, or maybe not, idk think about it
         Ok(Self {
             name,
-            session_path,
             script_path,
+            session_path,
         })
+    }
+
+    fn calc_script_path(session_path: &Path) -> eyre::Result<PathBuf> {
+        let hash = format!(
+            "{:x}",
+            md5::compute(utils::path_to_string(session_path).wrap_err("failed to hash path")?,)
+        );
+
+        Ok(pdirs::scripts_path()?.join(hash).with_extension("rhai"))
     }
 
     pub fn name(&self) -> &str {
@@ -153,35 +175,24 @@ fn default_manifest_codec() -> Box<dyn Codec<Manifest>> {
 }
 
 impl Manifest {
-    fn manifest_path() -> Result<PathBuf, Error> {
+    fn path() -> Result<PathBuf, Error> {
         const MANIFEST_FILE: &'static str = "manifest.toml";
-        Ok(pdirs::internals_dir()?.join(MANIFEST_FILE))
-    }
-
-    fn scripts_path() -> Result<PathBuf, Error> {
-        const SCRIPTS_DIR: &'static str = "scripts";
-        let scripts_path = pdirs::internals_dir()?.join(SCRIPTS_DIR);
-        if !scripts_path.exists() {
-            fs::create_dir(&scripts_path).map_err(|e| {
-                Error::FSOperationFaiure("failed to create scripts dir".to_owned(), e)
-            })?
-        }
-        Ok(scripts_path)
+        Ok(pdirs::config_dir()?.join(MANIFEST_FILE))
     }
 
     fn serialize(&self) -> Result<(), Error> {
-        let path = Self::manifest_path()?;
+        let path = Self::path()?;
         self.codec.serialize_to_file(self, &path)
     }
 
     fn deserialize(codec: Box<dyn Codec<Manifest>>) -> Result<Manifest, Error> {
-        let path = Self::manifest_path()?;
+        let path = Self::path()?;
         codec.deserialize_from_file(&path)
     }
 
     // TODO: maybe handle the manifest file being in a bad state
     pub fn new() -> Result<Self, Error> {
-        let path = Self::manifest_path()?;
+        let path = Self::path()?;
         if path.exists() {
             Self::deserialize(Manifest::default().codec)
         } else {
@@ -255,21 +266,6 @@ impl Manifest {
         self.entries.iter().map(|e| &e.name).collect::<Vec<_>>()
     }
 }
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Entry {
-    name: String,
-    session_path: PathBuf,
-    script_path: PathBuf,
-}
-
-impl PartialEq for Entry {
-    fn eq(&self, other: &Self) -> bool {
-        // TODO: handle same script_paths
-        self.name == other.name
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -292,7 +288,11 @@ mod tests {
     }
 
     fn test_entry(name: &str) -> Result<Entry> {
-        Entry::new(name.to_owned(), PathBuf::new())
+        Ok(Entry {
+            name: name.to_owned(),
+            script_path: PathBuf::new(),
+            session_path: PathBuf::new(),
+        })
     }
 
     fn manifest_with_names(names: Vec<&'static str>) -> Result<Manifest> {

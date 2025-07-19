@@ -31,27 +31,26 @@ impl error::Error for Error {
     }
 }
 
-// Yes just this. It's shared between packages so decided to put this here
-pub fn internals_dir() -> Result<PathBuf, Error> {
-    const INTERNALS_DIR: &'static str = "internals";
-    let path = config_dir()?.join(INTERNALS_DIR);
+const PROJECT_DIR_NAME: &'static str = "sesh";
+
+pub fn config_dir() -> Result<PathBuf, Error> {
+    let path: PathBuf = dirs::config_dir()
+        // TODO: add flag do specify alt config location, include that in the error message
+        .ok_or(Error::NotFound("config directory".to_owned()))?
+        .join(PROJECT_DIR_NAME);
+
     if !path.exists() {
-        fs::create_dir(&path).map_err(|e| {
-            Error::FSOperationFailed("failed to create internals directory".to_owned(), e)
-        })?
+        return Err(Error::NotFound("config directory".to_owned()));
     }
     Ok(path)
 }
 
-// Consider moving back to config
-pub fn config_dir() -> Result<PathBuf, Error> {
-    const CONFIG_DIR: &'static str = "sesh";
-    let config_path: PathBuf = dirs::config_dir()
-        // TODO: add flag do specify alt config location, include that in the error message
-        .ok_or(Error::NotFound("config directory".to_owned()))?
-        .join(CONFIG_DIR);
-
-    Ok(config_path
-        .canonicalize()
-        .map_err(|e| Error::FSOperationFailed("config directory not found".to_owned(), e))?)
+pub fn scripts_path() -> Result<PathBuf, Error> {
+    const SCRIPTS_DIR: &'static str = "scripts";
+    let scripts_path = config_dir()?.join(SCRIPTS_DIR);
+    if !scripts_path.exists() {
+        fs::create_dir(&scripts_path)
+            .map_err(|e| Error::FSOperationFailed("failed to create scripts dir".to_owned(), e))?
+    }
+    Ok(scripts_path)
 }

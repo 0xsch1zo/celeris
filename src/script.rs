@@ -19,6 +19,8 @@ fn eyre_to_rhai_err(error: eyre::Report) -> Box<EvalAltResult> {
     error.to_string().into()
 }
 
+// TODO: mabye being explicit with the creation and attaachment of the session would be better,
+// consider that
 pub fn run(entry: &manifest::Entry) -> eyre::Result<()> {
     let script = fs::read_to_string(entry.script_path()).wrap_err("session script not found")?;
     let mut engine = Engine::new();

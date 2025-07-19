@@ -38,6 +38,7 @@ fn main() -> Result<()> {
     color_eyre::config::HookBuilder::default()
         .display_env_section(false)
         .install()?;
+
     let config = Config::new()?;
     let mut session_manager = SessionManager::new(&config)?;
     let cli = Cli::parse();
