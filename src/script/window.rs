@@ -3,6 +3,7 @@ use crate::script::session::Session;
 use crate::script::{self, ScriptFuncResult};
 use crate::tmux::{self, Direction};
 use rhai::{CustomType, Engine, TypeBuilder};
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 #[derive(Clone)]
@@ -20,6 +21,15 @@ impl WindowBuilder {
     fn name(&mut self, name: &str) -> Self {
         self.inner.lock().unwrap().name(name.to_owned());
         self.clone()
+    }
+
+    fn root(&mut self, path: &str) -> ScriptFuncResult<Self> {
+        let path = PathBuf::from(path);
+        if !path.exists() {
+            return Err(format!("{path:?} does not exist").into());
+        }
+        self.inner.lock().unwrap().root(path);
+        Ok(self.clone())
     }
 
     fn command(&mut self, command: &str) -> Self {
@@ -45,6 +55,7 @@ impl CustomType for WindowBuilder {
             .with_name("WindowBuilder")
             .with_fn("WindowBuilder", WindowBuilder::new)
             .with_fn("name", WindowBuilder::name)
+            .with_fn("root", WindowBuilder::root)
             .with_fn("command", WindowBuilder::command)
             .with_fn("build", WindowBuilder::build);
     }

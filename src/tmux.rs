@@ -3,11 +3,11 @@ use color_eyre::{
     Result,
     eyre::{Context, ContextCompat, OptionExt, eyre},
 };
-use std::process::Stdio;
+use std::process;
 use std::str;
 use std::sync::{Arc, Mutex};
 use std::{env, io::Read};
-use std::{path::Path, process};
+use std::{path::PathBuf, process::Stdio};
 
 // TODO: provide a custom tmux command builder for special cases
 // TODO: handle tmux not being available
@@ -52,14 +52,16 @@ pub enum SplitSize {
     Absolute(u32),
 }
 
+#[derive(Clone, Debug)]
 enum TerminalState {
     InTmux,
     Normal,
 }
 
-pub enum SessionRoot<'a> {
+#[derive(Clone, Debug)]
+pub enum Root {
     Default,
-    Custom(&'a Path),
+    Custom(PathBuf),
 }
 
 #[derive(Clone, Debug)]
@@ -71,7 +73,7 @@ pub struct Session {
 
 impl Session {
     // Can't run this if in tmux session already
-    pub fn new(session_name: &str, root: SessionRoot) -> Result<Arc<Self>> {
+    pub fn new(session_name: &str, root: Root) -> Result<Arc<Self>> {
         if Self::target_exists(session_name)? {
             return Err(eyre!("session with name: {session_name}, already exists"));
         }
@@ -88,8 +90,8 @@ impl Session {
             &format!("{}{}{}", "#{window_id}", DELIM, "#{session_id}"),
         ]);
 
-        if let SessionRoot::Custom(root) = root {
-            command.args(["-c", &utils::path_to_string(root)?]);
+        if let Root::Custom(root) = root {
+            command.args(["-c", &utils::path_to_string(&root)?]);
         }
 
         let output = execute(command)?;
@@ -183,11 +185,11 @@ impl Session {
     }
 }
 
-// just a better interface can't int
 #[derive(Clone, Debug)]
 pub struct WindowBuilder {
     name: Option<String>,
     shell_command: Option<String>,
+    root: Root,
     session: Arc<Session>,
 }
 
@@ -196,6 +198,7 @@ impl WindowBuilder {
         Self {
             name: None,
             shell_command: None,
+            root: Root::Default,
             session: Arc::clone(session),
         }
     }
@@ -205,21 +208,46 @@ impl WindowBuilder {
         self
     }
 
+    pub fn root(&mut self, path: PathBuf) -> &mut Self {
+        self.root = Root::Custom(path);
+        self
+    }
+
     pub fn shell_command(&mut self, command: String) -> &mut Self {
         self.shell_command = Some(command);
         self
     }
 
-    fn parse_options(&self) -> Vec<&str> {
-        let mut options = Vec::new();
-        if let Some(name) = &self.name {
-            options.extend(["-n", name]);
-        }
+    fn prepare_options(&self) -> Result<Vec<String>> {
+        let mut options: Vec<String> = Vec::new();
+        self.prepare_name(&mut options);
+        self.prepare_shell_command(&mut options);
+        self.prepare_root(&mut options)?;
 
-        if let Some(shell_command) = &self.shell_command {
-            options.push(shell_command);
-        }
-        options
+        Ok(options)
+    }
+
+    fn prepare_name(&self, options: &mut Vec<String>) {
+        let Some(name) = &self.name else {
+            return;
+        };
+
+        options.extend(["-n".to_owned(), name.to_owned()]);
+    }
+
+    fn prepare_shell_command(&self, options: &mut Vec<String>) {
+        let Some(command) = &self.shell_command else {
+            return;
+        };
+        options.push(command.to_owned());
+    }
+
+    fn prepare_root(&self, options: &mut Vec<String>) -> Result<()> {
+        let Root::Custom(path) = &self.root else {
+            return Ok(());
+        };
+        options.extend(["-c".to_owned(), utils::path_to_string(path)?]);
+        Ok(())
     }
 
     fn create_window(&self) -> Result<WindowCore> {
@@ -231,7 +259,7 @@ impl WindowBuilder {
             &format!("{}{}{}", "#{pane_id}", DELIM, "#{window_id}"),
         ]);
 
-        command.args(self.parse_options());
+        command.args(self.prepare_options()?);
 
         let output = execute(command)?;
         let (default_pane_id, window_id) = output.trim().split_once(DELIM).ok_or_eyre(format!(
@@ -350,6 +378,7 @@ impl Window {
 pub struct SplitBuilder {
     sibling_pane: Arc<Pane>,
     direction: Direction,
+    root: Root,
     size: Option<SplitSize>,
 }
 
@@ -358,6 +387,7 @@ impl SplitBuilder {
         Self {
             direction: direction,
             size: None,
+            root: Root::Default,
             sibling_pane: Arc::clone(sibling_pane),
         }
     }
@@ -367,26 +397,47 @@ impl SplitBuilder {
         self
     }
 
+    pub fn root(&mut self, path: PathBuf) -> &mut Self {
+        self.root = Root::Custom(path);
+        self
+    }
+
     // TODO: maybe add support for below 3.1
     // break this up if more functionality is added
     fn prepare_options(&self) -> Result<Vec<String>> {
         let mut options = Vec::new();
+        self.prepare_size(&mut options)?;
+        self.prepare_root(&mut options)?;
+        Ok(options)
+    }
+
+    fn prepare_size(&self, options: &mut Vec<String>) -> Result<()> {
         let Some(size) = self.size else {
-            return Ok(options);
+            return Ok(());
         };
+
         match size {
             SplitSize::Percentage(percentage) if percentage <= 100 => {
-                options.extend([String::from("-l"), format!("{percentage}%")]);
+                options.extend(["-l".to_owned(), format!("{percentage}%")]);
             }
             SplitSize::Percentage(percentage) => {
                 return Err(eyre!("Percentage amount above 100: {percentage}"));
             }
             SplitSize::Absolute(absolute) => {
-                options.extend([String::from("-l"), absolute.to_string()])
+                options.extend(["-l".to_owned(), absolute.to_string()])
             }
         };
 
-        Ok(options)
+        Ok(())
+    }
+
+    fn prepare_root(&self, options: &mut Vec<String>) -> Result<()> {
+        let Root::Custom(path) = &self.root else {
+            return Ok(());
+        };
+
+        options.extend(["-c".to_owned(), utils::path_to_string(path)?]);
+        Ok(())
     }
 
     fn split_command(&self) -> Result<process::Command> {
@@ -448,6 +499,7 @@ impl Pane {
     }
 }
 
+// TODO: write tests for the builders
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -466,7 +518,7 @@ mod tests {
     }
 
     fn testing_session() -> Result<Arc<Session>> {
-        Ok(Session::new(TESTING_SESSION, SessionRoot::Default)?)
+        Ok(Session::new(TESTING_SESSION, Root::Default)?)
     }
 
     fn selected_pane_id(target: &str) -> Result<String> {
@@ -519,7 +571,7 @@ mod tests {
 
         #[test]
         fn new_session_custom_root() -> Result<()> {
-            let session = Session::new(TESTING_SESSION, SessionRoot::Custom(Path::new("/")))?;
+            let session = Session::new(TESTING_SESSION, Root::Custom(PathBuf::from("/")))?;
             let mut command = session.target("display-message")?;
             command.args(["-p", "#{pane_current_path}"]);
             let output = execute(command)?;

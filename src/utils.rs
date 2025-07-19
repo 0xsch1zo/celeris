@@ -37,5 +37,9 @@ pub fn expand_path(mut path: PathBuf) -> Result<PathBuf> {
         let stripped_path = path.strip_prefix("~").wrap_err("failed to expand ~ sign")?;
         path = home.join(stripped_path);
     }
+
+    let path = path
+        .canonicalize()
+        .wrap_err(format!("failed to expand path: {path:?}"))?;
     Ok(path)
 }

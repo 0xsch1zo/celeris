@@ -25,6 +25,8 @@ enum Commands {
     /// Creates a session config and opens it in your $EDITOR
     NewSession {
         /// Root path of a session. The name will be deduced unless set explictly
+        // TODO: IMPORTANT Consider making this a named argument for clarity, it could be clear
+        // enough now
         path: PathBuf,
         /// Custom name for a session
         #[arg(short, long)]

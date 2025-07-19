@@ -1,6 +1,7 @@
 use crate::script::{self, ScriptFuncResult};
 use crate::tmux::{self, Direction, SplitSize};
 use rhai::{CustomType, Engine, Module, TypeBuilder, export_module, exported_module};
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 macro_rules! pure_enum_module {
@@ -54,6 +55,15 @@ impl SplitBuilder {
         }
     }
 
+    fn root(&mut self, path: &str) -> ScriptFuncResult<Self> {
+        let path = PathBuf::from(path);
+        if !path.exists() {
+            return Err(format!("{path:?} does not exist").into());
+        }
+        self.inner.lock().unwrap().root(path);
+        Ok(self.clone())
+    }
+
     fn absolute_size(&mut self, size: i64) -> Self {
         self.inner
             .lock()
@@ -87,6 +97,7 @@ impl CustomType for SplitBuilder {
     fn build(mut builder: TypeBuilder<Self>) {
         builder
             .with_name("SplitBuilder")
+            .with_fn("root", SplitBuilder::root)
             .with_fn("absolute_size", SplitBuilder::absolute_size)
             .with_fn("percentage_size", SplitBuilder::percentage_size)
             .with_fn("build", SplitBuilder::build);

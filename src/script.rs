@@ -28,7 +28,7 @@ pub fn run(entry: &manifest::Entry) -> eyre::Result<()> {
 
     let tmux_session = tmux::Session::new(
         entry.name(),
-        tmux::SessionRoot::Custom(entry.session_path()),
+        tmux::Root::Custom(entry.session_path().to_owned()),
     )?;
 
     session::register(&mut engine, Arc::clone(&tmux_session));
