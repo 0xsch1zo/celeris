@@ -209,7 +209,7 @@ impl Manifest {
         let ancestors = path.ancestors().collect::<Vec<_>>();
         let ancestors = ancestors
             .iter()
-            .skip(1)
+            .skip(1) // skip the original directory
             .enumerate()
             .take_while(|(i, _)| *i < ancestors.len() - 2) // acount for skip
             .map(|(_, a)| a)

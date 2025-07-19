@@ -7,7 +7,10 @@ use sesh::repo_search;
 use sesh::session_manager::{SessionManager, SessionProperties};
 
 #[derive(Parser)]
-#[command(version, about, long_about = Some("testing"))]
+#[command(about = "A powerful git-aware session-manager written in Rust")]
+#[command(long_about = None)]
+#[command(version = "v0.1.0")]
+#[command(propagate_version = true)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -15,22 +18,24 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Finds repos on search roots declared in the config
     FindRepos,
+    /// Lists configured sessions
     ListSessions,
+    /// Creates a session config and opens it in your $EDITOR
     NewSession {
+        /// Root path of a session. The name will be deduced unless set explictly
         path: PathBuf,
+        /// Custom name for a session
         #[arg(short, long)]
         name: Option<String>,
     },
-    EditSession {
-        name: String,
-    },
-    LoadSession {
-        name: String,
-    },
-    RemoveSession {
-        name: String,
-    },
+    /// Edits an existing session config
+    EditSession { name: String },
+    /// Loads a session config
+    LoadSession { name: String },
+    /// Removes a session configuration
+    RemoveSession { name: String },
 }
 
 // TODO: somthing something last project feature add
