@@ -45,6 +45,17 @@ pub fn config_dir() -> Result<PathBuf, Error> {
     Ok(path)
 }
 
+pub fn internals_dir() -> Result<PathBuf, Error> {
+    const INTERNALS_DIR: &'static str = "internals";
+    let path = config_dir()?.join(INTERNALS_DIR);
+    if !path.exists() {
+        fs::create_dir(&path).map_err(|e| {
+            Error::FSOperationFailed("failed to create internals directory".to_owned(), e)
+        })?
+    }
+    Ok(path)
+}
+
 pub fn scripts_path() -> Result<PathBuf, Error> {
     const SCRIPTS_DIR: &'static str = "scripts";
     let scripts_path = config_dir()?.join(SCRIPTS_DIR);

@@ -177,7 +177,7 @@ fn default_manifest_codec() -> Box<dyn Codec<Manifest>> {
 impl Manifest {
     fn path() -> Result<PathBuf, Error> {
         const MANIFEST_FILE: &'static str = "manifest.toml";
-        Ok(pdirs::config_dir()?.join(MANIFEST_FILE))
+        Ok(pdirs::internals_dir()?.join(MANIFEST_FILE))
     }
 
     fn serialize(&self) -> Result<(), Error> {
