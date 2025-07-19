@@ -571,11 +571,11 @@ mod tests {
 
         #[test]
         fn new_session_custom_root() -> Result<()> {
-            let session = Session::new(TESTING_SESSION, Root::Custom(PathBuf::from("/")))?;
+            let session = Session::new(TESTING_SESSION, Root::Custom(env::temp_dir()))?;
             let mut command = session.target("display-message")?;
             command.args(["-p", "#{pane_current_path}"]);
             let output = execute(command)?;
-            assert_eq!(output.trim(), "/");
+            assert_eq!(output.trim(), &utils::path_to_string(&env::temp_dir())?);
             Ok(())
         }
 
@@ -621,6 +621,17 @@ mod tests {
 
     mod window {
         use super::*;
+
+        #[test]
+        fn new_window_custom_path() -> Result<()> {
+            let session = Session::new(TESTING_SESSION, Root::Default)?;
+            let window = WindowBuilder::new(&session).root(env::temp_dir()).build()?;
+            let mut command = window.window_core.target("display-message")?;
+            command.args(["-p", "#{pane_current_path}"]);
+            let output = execute(command)?;
+            assert_eq!(output.trim(), &utils::path_to_string(&env::temp_dir())?);
+            Ok(())
+        }
 
         #[test]
         fn set_option() -> Result<()> {
@@ -677,6 +688,22 @@ mod tests {
 
     mod pane {
         use super::*;
+
+        #[test]
+        fn new_pane_custom_path() -> Result<()> {
+            let session = Session::new(TESTING_SESSION, Root::Default)?;
+            let window = WindowBuilder::new(&session).build()?;
+            let pane = window
+                .default_pane
+                .split_builder(Direction::Vertical)
+                .root(env::temp_dir())
+                .build()?;
+            let mut command = pane.target("display-message")?;
+            command.args(["-p", "#{pane_current_path}"]);
+            let output = execute(command)?;
+            assert_eq!(output.trim(), &utils::path_to_string(&env::temp_dir())?);
+            Ok(())
+        }
 
         #[test]
         fn split() -> Result<()> {
