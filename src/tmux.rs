@@ -579,21 +579,6 @@ mod tests {
             Ok(())
         }
 
-        #[test]
-        fn new_window() -> Result<()> {
-            let session = testing_session()?;
-
-            let window = Window::builder(&session).build()?;
-            assert!(
-                Session::target_exists(&window.window_core.target)?,
-                "window doesn't exist"
-            );
-            let output = execute(session.target("list-windows")?)?;
-            let count = output.lines().count();
-            assert_eq!(count, 1, "default session window hasn't been moved");
-            Ok(())
-        }
-
         fn attach_test(attached: TerminalState) -> Result<()> {
             let session = testing_session()?;
             session.attach_core(attached)?;
@@ -623,13 +608,43 @@ mod tests {
         use super::*;
 
         #[test]
+        fn new_window() -> Result<()> {
+            let session = testing_session()?;
+
+            let window = Window::builder(&session).build()?;
+            assert!(
+                Session::target_exists(&window.window_core.target)?,
+                "window doesn't exist"
+            );
+            let output = execute(session.target("list-windows")?)?;
+            let count = output.lines().count();
+            assert_eq!(count, 1, "default session window hasn't been moved");
+            Ok(())
+        }
+
+        #[test]
         fn new_window_custom_path() -> Result<()> {
-            let session = Session::new(TESTING_SESSION, Root::Default)?;
-            let window = WindowBuilder::new(&session).root(env::temp_dir()).build()?;
+            let session = testing_session()?;
+            let window = Window::builder(&session).root(env::temp_dir()).build()?;
+
             let mut command = window.window_core.target("display-message")?;
             command.args(["-p", "#{pane_current_path}"]);
             let output = execute(command)?;
+
             assert_eq!(output.trim(), &utils::path_to_string(&env::temp_dir())?);
+            Ok(())
+        }
+
+        #[test]
+        fn new_window_named() -> Result<()> {
+            let session = testing_session()?;
+            let window = Window::builder(&session).name("test".to_owned()).build()?;
+
+            let mut command = window.window_core.target("display-message")?;
+            command.args(["-p", "#{window_name}"]);
+            let output = execute(command)?;
+
+            assert_eq!(output.trim(), "test");
             Ok(())
         }
 
@@ -690,9 +705,24 @@ mod tests {
         use super::*;
 
         #[test]
-        fn new_pane_custom_path() -> Result<()> {
+        fn split() -> Result<()> {
+            let session = testing_session()?;
+            let window = Window::builder(&session).build()?;
+            let pane1 = window.default_pane();
+            let pane2 = pane1.split_builder(Direction::Vertical).build()?;
+
+            assert_eq!(Session::target_exists(&pane1.target)?, true);
+            assert_eq!(Session::target_exists(&pane2.target)?, true);
+
+            let output = execute(window.window_core.target("list-panes")?)?;
+            assert_eq!(output.lines().count(), 2);
+            Ok(())
+        }
+
+        #[test]
+        fn split_custom_path() -> Result<()> {
             let session = Session::new(TESTING_SESSION, Root::Default)?;
-            let window = WindowBuilder::new(&session).build()?;
+            let window = Window::builder(&session).build()?;
             let pane = window
                 .default_pane
                 .split_builder(Direction::Vertical)
@@ -706,17 +736,61 @@ mod tests {
         }
 
         #[test]
-        fn split() -> Result<()> {
+        fn split_percentage_sized() -> Result<()> {
             let session = testing_session()?;
             let window = Window::builder(&session).build()?;
-            let pane1 = window.default_pane();
-            let pane2 = pane1.split_builder(Direction::Vertical).build()?;
+            let pane = window
+                .default_pane()
+                .split_builder(Direction::Horizontal)
+                .size(SplitSize::Percentage(0))
+                .build()?;
 
-            assert_eq!(Session::target_exists(&pane1.target)?, true);
-            assert_eq!(Session::target_exists(&pane2.target)?, true);
+            let mut command = window.window_core.target("display-message")?;
+            command.args(["-p", "#{window_width}"]);
+            let output = execute(command)?;
+            assert!(
+                output.trim().parse::<usize>()? >= 1,
+                "insufficent window size for testing"
+            );
 
-            let output = execute(window.window_core.target("list-panes")?)?;
-            assert_eq!(output.lines().count(), 2);
+            let mut command = pane.target("display-message")?;
+            command.args(["-p", "#{pane_width}"]);
+            let output = execute(command)?;
+
+            assert_eq!(output.trim(), "1");
+
+            let _ = window
+                .default_pane()
+                .split_builder(Direction::Horizontal)
+                .size(SplitSize::Percentage(101))
+                .build()
+                .unwrap_err();
+            Ok(())
+        }
+
+        #[test]
+        fn split_absolute_sized() -> Result<()> {
+            let session = testing_session()?;
+            let window = Window::builder(&session).build()?;
+            let pane = window
+                .default_pane()
+                .split_builder(Direction::Horizontal)
+                .size(SplitSize::Absolute(1))
+                .build()?;
+
+            let mut command = window.window_core.target("display-message")?;
+            command.args(["-p", "#{window_width}"]);
+            let output = execute(command)?;
+            assert!(
+                output.trim().parse::<usize>()? >= 1,
+                "insufficent window size for testing"
+            );
+
+            let mut command = pane.target("display-message")?;
+            command.args(["-p", "#{pane_width}"]);
+            let output = execute(command)?;
+
+            assert_eq!(output.trim(), "1");
             Ok(())
         }
 
