@@ -2,6 +2,7 @@ use crate::config::Config;
 use crate::manifest;
 use crate::manifest::Manifest;
 use crate::script;
+use crate::tmux::Session;
 use crate::utils;
 use color_eyre::Result;
 use color_eyre::eyre::OptionExt;
@@ -101,8 +102,25 @@ impl<'a> SessionManager<'a> {
         Ok(())
     }
 
-    pub fn list(&self) {
-        let sessions = self.manifest.list().iter().join("\n");
-        println!("{sessions}")
+    pub fn list(&self, include_active: bool) -> Result<()> {
+        let manifest_sessions = self.manifest.list().into_iter().map(ToOwned::to_owned);
+        let running_sessions = Session::list_sessions()?;
+        let sessions = manifest_sessions.chain(running_sessions.into_iter());
+
+        let sessions: Vec<_> = match Session::active_name()? {
+            Some(active_session) if !include_active => sessions
+                .filter(|session| active_session != *session)
+                .collect(),
+            Some(active_session) => sessions
+                .map(|session| match session {
+                    active if active_session == session => format!("*{active}"),
+                    _ => session,
+                })
+                .collect(),
+            _ => sessions.collect(),
+        };
+        let sessions = sessions.into_iter().sorted().dedup().join("\n");
+        println!("{sessions}");
+        Ok(())
     }
 }

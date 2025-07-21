@@ -21,7 +21,10 @@ enum Commands {
     /// Finds repos on search roots declared in the config
     FindRepos,
     /// Lists configured sessions
-    ListSessions,
+    ListSessions {
+        #[arg(short, long)]
+        include_active: bool,
+    },
     /// Creates a session config and opens it in your $EDITOR
     NewSession {
         /// Root path of a session. The name will be deduced unless set explictly
@@ -55,7 +58,7 @@ fn main() -> Result<()> {
             let repos = repo_search::search(&config)?;
             repos.iter().for_each(|r| println!("{r}"));
         }
-        Commands::ListSessions => session_manager.list(),
+        Commands::ListSessions { include_active } => session_manager.list(include_active)?,
         Commands::NewSession { name, path } => {
             let props = SessionProperties::from(name, path);
             session_manager.create(props)?;
