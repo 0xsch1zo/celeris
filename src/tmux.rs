@@ -129,10 +129,16 @@ impl Session {
         })
     }
 
-    /*fn active_name() -> Result<Option<String>> {
-        //tmux().args(["display-message", "-p", "#{session_name}"])
-        todo!()
-    }*/
+    pub fn active_name() -> Result<Option<String>> {
+        if let TerminalState::Normal = Self::terminal_state()? {
+            return Ok(None);
+        }
+
+        let output = tmux()
+            .args(["display-message", "-p", "#{session_name}"])
+            .execute()?;
+        Ok(Some(output.trim().to_owned()))
+    }
 
     fn attach_core(&self, attached: TerminalState) -> Result<()> {
         let mut command = match attached {
@@ -570,6 +576,38 @@ mod tests {
                 );
                 Ok(())
             })?;
+
+            Ok(())
+        }
+
+        #[test]
+        fn terminal_state() -> Result<()> {
+            let state = Session::terminal_state()?;
+            match (env::var("TMUX"), state) {
+                (Ok(_), TerminalState::InTmux) => Ok(()),
+                (Ok(_), TerminalState::Normal) => {
+                    Err(eyre!("terminal state is Normal when TMUX var exists"))
+                }
+                (Err(env::VarError::NotPresent), TerminalState::Normal) => Ok(()),
+                (Err(env::VarError::NotPresent), TerminalState::InTmux) => Err(eyre!(
+                    "terminal state state is InTmux when TMUX var doesn't exist"
+                )),
+                (Err(err), _) => Err(err.into()),
+            }
+        }
+
+        #[test]
+        fn active_name() -> Result<()> {
+            let session = testing_session()?;
+            session.attach()?;
+            let Some(active_name) = Session::active_name()? else {
+                panic!("active_name claimed that session is not attached")
+            };
+
+            let output = tmux()
+                .args(["display-message", "-p", "#{session_name}"])
+                .execute()?;
+            assert_eq!(active_name, output.trim());
 
             Ok(())
         }
