@@ -140,6 +140,13 @@ impl Session {
         Ok(Some(output.trim().to_owned()))
     }
 
+    pub fn list_sessions() -> Result<Vec<String>> {
+        let output = tmux()
+            .args(["list-sessions", "-F", "#{session_name}"])
+            .execute()?;
+        Ok(output.trim().lines().map(ToOwned::to_owned).collect())
+    }
+
     fn attach_core(&self, attached: TerminalState) -> Result<()> {
         let mut command = match attached {
             TerminalState::InTmux => self.target("switch-client")?,
@@ -608,7 +615,29 @@ mod tests {
                 .args(["display-message", "-p", "#{session_name}"])
                 .execute()?;
             assert_eq!(active_name, output.trim());
+            Ok(())
+        }
 
+        #[test]
+        fn list_sessions() -> Result<()> {
+            let session_name_1 = "__sesh_testing_1";
+            let session_name_2 = "__sesh_testing_2";
+            let _session1 = Session::new(session_name_1, Root::Default)?; // to stop the session
+            // from being dropped
+            let _session2 = Session::new(session_name_2, Root::Default)?;
+            let sessions = Session::list_sessions()?;
+            assert!(
+                sessions
+                    .iter()
+                    .find(|name| *name == session_name_1)
+                    .is_some()
+            );
+            assert!(
+                sessions
+                    .iter()
+                    .find(|name| *name == session_name_2)
+                    .is_some()
+            );
             Ok(())
         }
 
