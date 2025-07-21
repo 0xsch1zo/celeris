@@ -3,35 +3,41 @@ use color_eyre::{
     Result,
     eyre::{Context, ContextCompat, OptionExt, eyre},
 };
-use std::process;
 use std::str;
 use std::sync::{Arc, Mutex};
 use std::{env, io::Read};
-use std::{path::PathBuf, process::Stdio};
+use std::{
+    path::PathBuf,
+    process::{Command, Stdio},
+};
 
 // TODO: provide a custom tmux command builder for special cases
-// TODO: handle tmux not being available
-fn tmux() -> process::Command {
-    process::Command::new("tmux")
+fn tmux() -> Command {
+    Command::new("tmux")
 }
 
-// Built-in error handling
-fn execute(mut command: process::Command) -> Result<String> {
-    let output = command
-        .output()
-        .wrap_err_with(|| format!("failed to execute tmux command: {:?}", command))?;
+trait TmuxExecuteExt {
+    fn execute(&mut self) -> Result<String>;
+}
 
-    if !output.status.success() {
-        return Err(eyre!(
-            "Command: {:?}: {}",
-            command,
-            str::from_utf8(&output.stderr).wrap_err_with(|| "Tmux returned invalid utf-8")?
-        ));
+impl TmuxExecuteExt for Command {
+    fn execute(&mut self) -> Result<String> {
+        let output = self
+            .output()
+            .wrap_err_with(|| format!("failed to execute tmux command: {:?}", self))?;
+
+        if !output.status.success() {
+            return Err(eyre!(
+                "Command: {:?}: {}",
+                self,
+                str::from_utf8(&output.stderr).wrap_err_with(|| "Tmux returned invalid utf-8")?
+            ));
+        }
+        Ok(String::from_utf8(output.stdout).wrap_err_with(|| "Tmux returned invalid utf-8")?)
     }
-    Ok(String::from_utf8(output.stdout).wrap_err_with(|| "Tmux returned invalid utf-8")?)
 }
 
-fn tmux_target_command(target: &str, command: &str) -> Result<process::Command> {
+fn tmux_target_command(target: &str, command: &str) -> Result<Command> {
     if !Session::target_exists(target)? {
         return Err(eyre!("target: {target}, doesn't exist"));
     }
@@ -94,7 +100,7 @@ impl Session {
             command.args(["-c", &utils::path_to_string(&root)?]);
         }
 
-        let output = execute(command)?;
+        let output = command.execute()?;
         let (default_window_id, session_id) =
             output.trim().split_once(DELIM).ok_or_eyre(format!(
                 "failed to create session, couldn't parse session or window id: {}",
@@ -109,7 +115,7 @@ impl Session {
     }
 
     // TODO: Maybe replace with an enum
-    fn target(&self, command: &str) -> Result<process::Command> {
+    fn target(&self, command: &str) -> Result<Command> {
         let target = format!("{}:", self.session_id);
         tmux_target_command(&target, command)
     }
@@ -122,6 +128,11 @@ impl Session {
             Err(err) => return Err(err).wrap_err("failed to check for active tmux session"),
         })
     }
+
+    /*fn active_name() -> Result<Option<String>> {
+        //tmux().args(["display-message", "-p", "#{session_name}"])
+        todo!()
+    }*/
 
     fn attach_core(&self, attached: TerminalState) -> Result<()> {
         let mut command = match attached {
@@ -194,12 +205,12 @@ pub struct WindowBuilder {
 }
 
 impl WindowBuilder {
-    pub fn new(session: &Arc<Session>) -> Self {
+    pub fn new(session: Arc<Session>) -> Self {
         Self {
             name: None,
             shell_command: None,
             root: Root::Default,
-            session: Arc::clone(session),
+            session: session,
         }
     }
 
@@ -252,16 +263,16 @@ impl WindowBuilder {
 
     fn create_window(&self) -> Result<WindowCore> {
         const DELIM: &str = "|";
-        let mut command = self.session.target("new-window")?;
-        command.args([
-            "-P",
-            "-F",
-            &format!("{}{}{}", "#{pane_id}", DELIM, "#{window_id}"),
-        ]);
-
-        command.args(self.prepare_options()?);
-
-        let output = execute(command)?;
+        let output = self
+            .session
+            .target("new-window")?
+            .args([
+                "-P",
+                "-F",
+                &format!("{}{}{}", "#{pane_id}", DELIM, "#{window_id}"),
+            ])
+            .args(self.prepare_options()?)
+            .execute()?;
         let (default_pane_id, window_id) = output.trim().split_once(DELIM).ok_or_eyre(format!(
             "failed to create session, couldn't parse session or window id: {}",
             output
@@ -304,19 +315,19 @@ impl WindowCore {
         }
     }
 
-    fn target(&self, command: &str) -> Result<process::Command> {
+    fn target(&self, command: &str) -> Result<Command> {
         tmux_target_command(&self.target, command)
     }
 
     fn set_option(&self, option: &str, value: &str) -> Result<()> {
-        let mut command = self.target("set-window-option")?;
-        command.args([option, value]);
-        execute(command)?;
+        self.target("set-window-option")?
+            .args([option, value])
+            .execute()?;
         Ok(())
     }
 
     fn select(&self) -> Result<()> {
-        execute(self.target("select-window")?)?;
+        self.target("select-window")?.execute()?;
         Ok(())
     }
 
@@ -326,16 +337,16 @@ impl WindowCore {
             Direction::Vertical => command.arg("even-vertical"),
             Direction::Horizontal => command.arg("even-horizontal"),
         };
-        execute(command)?;
+        command.execute()?;
         Ok(())
     }
 
     // Only for the purpose of killing the default window
     fn move_kill(&self, target: &str) -> Result<()> {
-        let mut command = self.target("move-window")?;
         // use a proper source target
-        command.args(["-s", &self.window_id, "-t", target, "-k"]);
-        execute(command)?;
+        self.target("move-window")?
+            .args(["-s", &self.window_id, "-t", target, "-k"])
+            .execute()?;
         Ok(())
     }
 }
@@ -354,11 +365,14 @@ impl Window {
         let window_core = Arc::new(window_core);
         Arc::new(Self {
             window_core: Arc::clone(&window_core),
-            default_pane: Arc::new(Pane::new(&window_core, &window_core.default_pane_id)),
+            default_pane: Arc::new(Pane::new(
+                Arc::clone(&window_core),
+                &window_core.default_pane_id,
+            )),
         })
     }
 
-    pub fn builder(session: &Arc<Session>) -> WindowBuilder {
+    pub fn builder(session: Arc<Session>) -> WindowBuilder {
         WindowBuilder::new(session)
     }
 
@@ -383,12 +397,12 @@ pub struct SplitBuilder {
 }
 
 impl SplitBuilder {
-    fn new(sibling_pane: &Arc<Pane>, direction: Direction) -> Self {
+    fn new(sibling_pane: Arc<Pane>, direction: Direction) -> Self {
         Self {
             direction: direction,
             size: None,
             root: Root::Default,
-            sibling_pane: Arc::clone(sibling_pane),
+            sibling_pane: sibling_pane,
         }
     }
 
@@ -402,8 +416,6 @@ impl SplitBuilder {
         self
     }
 
-    // TODO: maybe add support for below 3.1
-    // break this up if more functionality is added
     fn prepare_options(&self) -> Result<Vec<String>> {
         let mut options = Vec::new();
         self.prepare_size(&mut options)?;
@@ -440,7 +452,7 @@ impl SplitBuilder {
         Ok(())
     }
 
-    fn split_command(&self) -> Result<process::Command> {
+    fn split_command(&self) -> Result<Command> {
         let mut command = self.sibling_pane.target("split-window")?;
         command.args(["-P", "-F", "#{pane_id}"]);
         match self.direction {
@@ -453,8 +465,11 @@ impl SplitBuilder {
     }
 
     pub fn build(&self) -> Result<Pane> {
-        let output = execute(self.split_command()?)?;
-        Ok(Pane::new(&self.sibling_pane.window, output.trim()))
+        let output = self.split_command()?.execute()?;
+        Ok(Pane::new(
+            Arc::clone(&self.sibling_pane.window),
+            output.trim(),
+        ))
     }
 }
 
@@ -465,48 +480,46 @@ pub struct Pane {
 }
 
 impl Pane {
-    fn new(window: &Arc<WindowCore>, pane_id: &str) -> Self {
+    fn new(window: Arc<WindowCore>, pane_id: &str) -> Self {
         let target = format!(
             "{}:{}.{}",
             window.session.session_id, window.window_id, pane_id
         );
         Self {
-            window: Arc::clone(window),
+            window: window,
             target,
         }
     }
 
-    fn target(&self, command: &str) -> Result<process::Command> {
+    fn target(&self, command: &str) -> Result<Command> {
         tmux_target_command(&self.target, command)
     }
 
     // No reasson to return arc here because it's owned which is fine with rhai
     pub fn split_builder(self: &Arc<Self>, direction: Direction) -> SplitBuilder {
-        SplitBuilder::new(self, direction)
+        SplitBuilder::new(Arc::clone(self), direction)
     }
 
     pub fn select(&self) -> Result<()> {
-        execute(self.target("select-pane")?)?;
+        self.target("select-pane")?.execute()?;
         Ok(())
     }
 
     pub fn run_command(&self, command: &str) -> Result<()> {
-        let mut send_keys = self.target("send-keys")?;
-        send_keys.args([command, "Enter"]);
-
-        execute(send_keys)?;
+        self.target("send-keys")?
+            .args([command, "Enter"])
+            .execute()?;
         Ok(())
     }
 }
 
-// TODO: write tests for the builders
 #[cfg(test)]
 mod tests {
     use super::*;
     const TESTING_SESSION: &str = "__sesh_testing";
 
     fn kill_session(session: &Session) -> Result<()> {
-        execute(Session::target(session, "kill-session")?)?;
+        Session::target(session, "kill-session")?.execute()?;
         Ok(())
     }
 
@@ -522,9 +535,11 @@ mod tests {
     }
 
     fn selected_pane_id(target: &str) -> Result<String> {
-        let mut command = tmux();
-        command.args(["display-message", "-p", "-t", target, "#{pane_id}"]);
-        Ok(execute(command)?.trim().to_string())
+        Ok(tmux()
+            .args(["display-message", "-p", "-t", target, "#{pane_id}"])
+            .execute()?
+            .trim()
+            .to_owned())
     }
 
     mod session {
@@ -572,9 +587,10 @@ mod tests {
         #[test]
         fn new_session_custom_root() -> Result<()> {
             let session = Session::new(TESTING_SESSION, Root::Custom(env::temp_dir()))?;
-            let mut command = session.target("display-message")?;
-            command.args(["-p", "#{pane_current_path}"]);
-            let output = execute(command)?;
+            let output = session
+                .target("display-message")?
+                .args(["-p", "#{pane_current_path}"])
+                .execute()?;
             assert_eq!(output.trim(), &utils::path_to_string(&env::temp_dir())?);
             Ok(())
         }
@@ -582,9 +598,10 @@ mod tests {
         fn attach_test(attached: TerminalState) -> Result<()> {
             let session = testing_session()?;
             session.attach_core(attached)?;
-            let mut command = session.target("display-message")?;
-            command.args(["-p", "#{session_attached}"]);
-            let output = execute(command)?;
+            let output = session
+                .target("display-message")?
+                .args(["-p", "#{session_attached}"])
+                .execute()?;
             assert_eq!(output.trim(), "1");
             Ok(())
         }
@@ -611,12 +628,12 @@ mod tests {
         fn new_window() -> Result<()> {
             let session = testing_session()?;
 
-            let window = Window::builder(&session).build()?;
+            let window = Window::builder(Arc::clone(&session)).build()?;
             assert!(
                 Session::target_exists(&window.window_core.target)?,
                 "window doesn't exist"
             );
-            let output = execute(session.target("list-windows")?)?;
+            let output = session.target("list-windows")?.execute()?;
             let count = output.lines().count();
             assert_eq!(count, 1, "default session window hasn't been moved");
             Ok(())
@@ -625,11 +642,13 @@ mod tests {
         #[test]
         fn new_window_custom_path() -> Result<()> {
             let session = testing_session()?;
-            let window = Window::builder(&session).root(env::temp_dir()).build()?;
+            let window = Window::builder(session).root(env::temp_dir()).build()?;
 
-            let mut command = window.window_core.target("display-message")?;
-            command.args(["-p", "#{pane_current_path}"]);
-            let output = execute(command)?;
+            let output = window
+                .window_core
+                .target("display-message")?
+                .args(["-p", "#{pane_current_path}"])
+                .execute()?;
 
             assert_eq!(output.trim(), &utils::path_to_string(&env::temp_dir())?);
             Ok(())
@@ -638,12 +657,13 @@ mod tests {
         #[test]
         fn new_window_named() -> Result<()> {
             let session = testing_session()?;
-            let window = Window::builder(&session).name("test".to_owned()).build()?;
+            let window = Window::builder(session).name("test".to_owned()).build()?;
 
-            let mut command = window.window_core.target("display-message")?;
-            command.args(["-p", "#{window_name}"]);
-            let output = execute(command)?;
-
+            let output = window
+                .window_core
+                .target("display-message")?
+                .args(["-p", "#{window_name}"])
+                .execute()?;
             assert_eq!(output.trim(), "test");
             Ok(())
         }
@@ -651,11 +671,14 @@ mod tests {
         #[test]
         fn set_option() -> Result<()> {
             let session = testing_session()?;
-            let window = Window::builder(&session).build()?;
+            let window = Window::builder(session).build()?;
             let option = ("allow-rename", "off");
             window.window_core.set_option(option.0, option.1)?;
 
-            let output = execute(window.window_core.target("show-window-options")?)?;
+            let output = window
+                .window_core
+                .target("show-window-options")?
+                .execute()?;
             let option_got = output.lines().find(|line| line.contains(option.0));
             let option_got =
                 option_got.ok_or_eyre("couldn't find option which was supposed to be set")?;
@@ -669,12 +692,13 @@ mod tests {
         #[test]
         fn select() -> Result<()> {
             let session = testing_session()?;
-            let window1 = Window::builder(&session).build()?;
-            let _window2 = Window::builder(&session).build()?;
+            let window1 = Window::builder(Arc::clone(&session)).build()?;
+            let _window2 = Window::builder(Arc::clone(&session)).build()?;
             window1.select()?;
-            let mut command = session.target("display-message")?;
-            command.args(["-p", "#{window_id}"]);
-            let output = execute(command)?;
+            let output = session
+                .target("display-message")?
+                .args(["-p", "#{window_id}"])
+                .execute()?;
             assert!(window1.window_core.target.contains(output.trim()));
             Ok(())
         }
@@ -685,7 +709,7 @@ mod tests {
         #[test]
         fn even_out() -> Result<()> {
             let session = testing_session()?;
-            let window = Window::builder(&session).build()?;
+            let window = Window::builder(session).build()?;
             window.event_out(Direction::Horizontal)?;
             window.event_out(Direction::Vertical)?;
             Ok(())
@@ -694,7 +718,7 @@ mod tests {
         #[test]
         fn default_pane() -> Result<()> {
             let session = testing_session()?;
-            let window = Window::builder(&session).build()?;
+            let window = Window::builder(session).build()?;
             let pane = window.default_pane();
             assert_eq!(Session::target_exists(&pane.target)?, true);
             Ok(())
@@ -707,14 +731,14 @@ mod tests {
         #[test]
         fn split() -> Result<()> {
             let session = testing_session()?;
-            let window = Window::builder(&session).build()?;
+            let window = Window::builder(session).build()?;
             let pane1 = window.default_pane();
             let pane2 = pane1.split_builder(Direction::Vertical).build()?;
 
             assert_eq!(Session::target_exists(&pane1.target)?, true);
             assert_eq!(Session::target_exists(&pane2.target)?, true);
 
-            let output = execute(window.window_core.target("list-panes")?)?;
+            let output = window.window_core.target("list-panes")?.execute()?;
             assert_eq!(output.lines().count(), 2);
             Ok(())
         }
@@ -722,15 +746,16 @@ mod tests {
         #[test]
         fn split_custom_path() -> Result<()> {
             let session = Session::new(TESTING_SESSION, Root::Default)?;
-            let window = Window::builder(&session).build()?;
+            let window = Window::builder(session).build()?;
             let pane = window
                 .default_pane
                 .split_builder(Direction::Vertical)
                 .root(env::temp_dir())
                 .build()?;
-            let mut command = pane.target("display-message")?;
-            command.args(["-p", "#{pane_current_path}"]);
-            let output = execute(command)?;
+            let output = pane
+                .target("display-message")?
+                .args(["-p", "#{pane_current_path}"])
+                .execute()?;
             assert_eq!(output.trim(), &utils::path_to_string(&env::temp_dir())?);
             Ok(())
         }
@@ -738,24 +763,27 @@ mod tests {
         #[test]
         fn split_percentage_sized() -> Result<()> {
             let session = testing_session()?;
-            let window = Window::builder(&session).build()?;
+            let window = Window::builder(session).build()?;
             let pane = window
                 .default_pane()
                 .split_builder(Direction::Horizontal)
                 .size(SplitSize::Percentage(0))
                 .build()?;
 
-            let mut command = window.window_core.target("display-message")?;
-            command.args(["-p", "#{window_width}"]);
-            let output = execute(command)?;
+            let output = window
+                .window_core
+                .target("display-message")?
+                .args(["-p", "#{window_width}"])
+                .execute()?;
             assert!(
                 output.trim().parse::<usize>()? >= 1,
                 "insufficent window size for testing"
             );
 
-            let mut command = pane.target("display-message")?;
-            command.args(["-p", "#{pane_width}"]);
-            let output = execute(command)?;
+            let output = pane
+                .target("display-message")?
+                .args(["-p", "#{pane_width}"])
+                .execute()?;
 
             assert_eq!(output.trim(), "1");
 
@@ -771,24 +799,27 @@ mod tests {
         #[test]
         fn split_absolute_sized() -> Result<()> {
             let session = testing_session()?;
-            let window = Window::builder(&session).build()?;
+            let window = Window::builder(session).build()?;
             let pane = window
                 .default_pane()
                 .split_builder(Direction::Horizontal)
                 .size(SplitSize::Absolute(1))
                 .build()?;
 
-            let mut command = window.window_core.target("display-message")?;
-            command.args(["-p", "#{window_width}"]);
-            let output = execute(command)?;
+            let output = window
+                .window_core
+                .target("display-message")?
+                .args(["-p", "#{window_width}"])
+                .execute()?;
             assert!(
                 output.trim().parse::<usize>()? >= 1,
                 "insufficent window size for testing"
             );
 
-            let mut command = pane.target("display-message")?;
-            command.args(["-p", "#{pane_width}"]);
-            let output = execute(command)?;
+            let output = pane
+                .target("display-message")?
+                .args(["-p", "#{pane_width}"])
+                .execute()?;
 
             assert_eq!(output.trim(), "1");
             Ok(())
@@ -797,13 +828,14 @@ mod tests {
         #[test]
         fn select() -> Result<()> {
             let session = testing_session()?;
-            let window = Window::builder(&session).build()?;
+            let window = Window::builder(Arc::clone(&session)).build()?;
             let pane1 = window.default_pane();
             let _pane2 = pane1.split_builder(Direction::Vertical).build();
             pane1.select()?;
-            let mut command = session.target("display-message")?;
-            command.args(["-p", "#{pane_id}"]);
-            let output = execute(command)?;
+            let output = session
+                .target("display-message")?
+                .args(["-p", "#{pane_id}"])
+                .execute()?;
             assert!(pane1.target.contains(output.trim()));
             Ok(())
         }
@@ -812,7 +844,7 @@ mod tests {
         #[test]
         fn run_command() -> Result<()> {
             let session = testing_session()?;
-            let window = Window::builder(&session).build()?;
+            let window = Window::builder(session).build()?;
             //should run until Ctrl+C or the session is killled. Will work
             // only on most systems. Testing this without getting execution
             // is probably impossible
@@ -822,10 +854,10 @@ mod tests {
             pane.run_command(&command)?;
             // Yes the shell is sometimes this slow
             std::thread::sleep(std::time::Duration::from_secs(1));
-            let mut get_running_command = pane.target("display-message")?;
-            get_running_command.args(["-p", "#{pane_current_command}"]);
-
-            let output = execute(get_running_command)?;
+            let output = pane
+                .target("display-message")?
+                .args(["-p", "#{pane_current_command}"])
+                .execute()?;
             assert_eq!(output.trim(), real_command);
             Ok(())
         }

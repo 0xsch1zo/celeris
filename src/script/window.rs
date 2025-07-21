@@ -14,7 +14,7 @@ pub struct WindowBuilder {
 impl WindowBuilder {
     fn new(session: Session) -> Self {
         WindowBuilder {
-            inner: Arc::new(Mutex::new(tmux::WindowBuilder::new(&session.inner()))),
+            inner: Arc::new(Mutex::new(tmux::WindowBuilder::new(session.inner()))),
         }
     }
 

@@ -106,8 +106,9 @@ pub struct Entry {
 
 impl PartialEq for Entry {
     fn eq(&self, other: &Self) -> bool {
-        // TODO: handle same script_paths
         self.name == other.name
+            || self.script_path == other.script_path
+            || self.session_path == other.session_path
     }
 }
 
@@ -120,7 +121,6 @@ impl Entry {
             "failed to create a script file for session: {name}"
         ))?;
 
-        // TODO: use unique id instead of hash, or maybe not, idk think about it
         Ok(Self {
             name,
             script_path,
@@ -266,6 +266,7 @@ impl Manifest {
         self.entries.iter().map(|e| &e.name).collect::<Vec<_>>()
     }
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;

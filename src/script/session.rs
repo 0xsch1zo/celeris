@@ -11,9 +11,9 @@ pub struct Session {
 
 // TODO: figure out what would be an idiomatic constructor
 impl Session {
-    pub fn new(tmux_session: &Arc<tmux::Session>) -> ScriptFuncResult<Session> {
+    pub fn new(tmux_session: Arc<tmux::Session>) -> ScriptFuncResult<Session> {
         Ok(Session {
-            inner: Arc::clone(tmux_session),
+            inner: tmux_session,
         })
     }
 
@@ -33,7 +33,9 @@ pub fn register(engine: &mut Engine, session: Arc<tmux::Session>) {
     let mut session_module = Module::new();
     FuncRegistration::new("build")
         .in_internal_namespace()
-        .set_into_module(&mut session_module, move || Session::new(&session));
+        .set_into_module(&mut session_module, move || {
+            Session::new(Arc::clone(&session))
+        });
 
     engine.register_static_module("Session", session_module.into());
 }

@@ -110,7 +110,6 @@ pub struct Pane {
 }
 
 impl Pane {
-    // TODO: move arc when taking ownership, do thie EVERYWHERE
     pub fn new(inner: Arc<tmux::Pane>) -> Pane {
         Self { inner }
     }
