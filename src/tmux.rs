@@ -46,16 +46,19 @@ fn tmux_target_command(target: &str, command: &str) -> Result<Command> {
     Ok(tmux)
 }
 
-/*pub fn server_running() -> Result<bool> {
+pub fn server_running() -> Result<bool> {
     let mut command = tmux();
     command.args(["display-message", "-p", "#{socket_path}"]);
 
     let status = command
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
         .status()
         .wrap_err_with(|| format!("failed to execute tmux command: {:?}", command))?;
 
     Ok(status.success())
-}*/
+}
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub enum Direction {
@@ -141,6 +144,10 @@ impl Session {
     }
 
     pub fn active_name() -> Result<Option<String>> {
+        if !server_running()? {
+            return Ok(None);
+        }
+
         if let TerminalState::Normal = Self::terminal_state()? {
             return Ok(None);
         }
@@ -152,10 +159,9 @@ impl Session {
     }
 
     pub fn list_sessions() -> Result<Vec<String>> {
-        /*if !server_running()? {
+        if !server_running()? {
             return Ok(Vec::new());
         }
-        println!("{}", server_running()?);*/
         let output = tmux()
             .args(["list-sessions", "-F", "#{session_name}"])
             .execute()?;
@@ -585,6 +591,14 @@ mod tests {
             .to_owned())
     }
 
+    // TODO: maybe a more complete test would be nice
+    #[test]
+    fn server_running_t() -> Result<()> {
+        let _session = testing_session();
+        assert_eq!(server_running()?, true);
+        Ok(())
+    }
+
     mod session {
         use super::*;
 
@@ -633,10 +647,9 @@ mod tests {
             }
         }
 
-        /*#[test]
+        #[test]
         fn active_name() -> Result<()> {
             let session = testing_session()?;
-            std::thread::sleep(std::time::Duration::from_secs(5));
             session.attach()?;
             let Some(active_name) = Session::active_name()? else {
                 panic!("active_name claimed that session is not attached")
@@ -647,7 +660,7 @@ mod tests {
                 .execute()?;
             assert_eq!(active_name, output.trim());
             Ok(())
-        }*/
+        }
 
         #[test]
         fn list_sessions() -> Result<()> {
