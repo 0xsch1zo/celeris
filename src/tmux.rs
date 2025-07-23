@@ -695,17 +695,20 @@ mod tests {
 
         fn attach_test(attached: TerminalState) -> Result<()> {
             let session = testing_session()?;
-            let (command, handle) = session.spawn_attach(attached)?;
+            let (command, handle) = session.spawn_attach(attached.clone())?;
             let output = session
                 .target("display-message")?
                 .args(["-p", "#{session_attached}"])
                 .execute()?;
-            if output.trim() == "1" {
-                session.detach_clients()?;
-                Ok(())
-            } else {
-                Err(session.wait_attach(command, handle).unwrap_err())
+            if output.trim() != "1" {
+                return Err(session.wait_attach(command, handle).unwrap_err());
             }
+            match attached {
+                TerminalState::Normal => session.detach_clients()?,
+                // we assume that switch-client doesn't completly block
+                TerminalState::InTmux => session.wait_attach(command, handle)?,
+            };
+            Ok(())
         }
 
         #[test_with::env(TMUX)]
