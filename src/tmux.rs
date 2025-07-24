@@ -3,6 +3,7 @@ use color_eyre::{
     Result,
     eyre::{Context, ContextCompat, OptionExt, eyre},
 };
+use itertools::Itertools;
 use std::sync::{Arc, Mutex};
 use std::{env, io::Read};
 use std::{
@@ -124,6 +125,43 @@ impl Session {
         Ok(Arc::new(Self {
             session_id: session_id.to_string(),
             window_count: Arc::new(Mutex::new(0)),
+            default_window_id: default_window_id.to_string(),
+        }))
+    }
+
+    pub fn from(session_identifier: &str) -> Result<Arc<Session>> {
+        if !Self::target_exists(session_identifier)? {
+            return Err(eyre!("session: {session_identifier}, doesn't exist"));
+        }
+
+        const DELIM: &str = "|";
+        let output = tmux()
+            .args([
+                "display-message",
+                "-p",
+                "-t",
+                session_identifier,
+                &format!(
+                    "{}{}{}{}{}",
+                    "#{window_id}", DELIM, "#{session_id}", DELIM, "#{session_windows}"
+                ),
+            ])
+            .execute()?;
+
+        let [default_window_id, session_id, window_count] =
+            output.trim().splitn(3, DELIM).collect_vec()[..]
+        else {
+            return Err(eyre!(
+                "incorrect count of variables returned from display-message {output}"
+            ));
+        };
+        let window_count = window_count.parse::<usize>().wrap_err(
+            "failed to parse window_count while creating session object from existing session",
+        )?;
+
+        Ok(Arc::new(Self {
+            session_id: session_id.to_owned(),
+            window_count: Arc::new(Mutex::new(window_count)),
             default_window_id: default_window_id.to_string(),
         }))
     }
@@ -555,15 +593,38 @@ impl Pane {
 
 #[cfg(test)]
 mod tests {
+    use std::ops::Deref;
+
     use super::*;
     const TESTING_SESSION: &str = "__sesh_testing";
 
-    impl Session {
+    struct CleanSession {
+        inner: Arc<Session>,
+    }
+
+    impl CleanSession {
         fn kill(&self) -> Result<()> {
-            self.target("kill-session")?.execute()?;
+            self.inner.target("kill-session")?.execute()?;
             Ok(())
         }
+    }
 
+    impl Deref for CleanSession {
+        type Target = Session;
+
+        fn deref(&self) -> &Self::Target {
+            &self.inner
+        }
+    }
+
+    impl Drop for CleanSession {
+        fn drop(&mut self) {
+            self.kill()
+                .expect("kill-session failed - environment after test is not cleaned up");
+        }
+    }
+
+    impl Session {
         fn detach_clients(&self) -> Result<()> {
             tmux()
                 .args(["detach-client", "-s", &self.session_id])
@@ -572,15 +633,9 @@ mod tests {
         }
     }
 
-    impl Drop for Session {
-        fn drop(&mut self) {
-            self.kill()
-                .expect("kill-session failed - environment after test is not cleaned up");
-        }
-    }
-
-    fn testing_session() -> Result<Arc<Session>> {
-        Ok(Session::new(TESTING_SESSION, Root::Default)?)
+    fn testing_session() -> Result<CleanSession> {
+        let session = Session::new(TESTING_SESSION, Root::Default)?;
+        Ok(CleanSession(Arc::try_unwrap(session).unwrap()))
     }
 
     fn selected_pane_id(target: &str) -> Result<String> {
@@ -601,6 +656,24 @@ mod tests {
 
     mod session {
         use super::*;
+
+        mod from {
+            use crate::tmux::{Session, TmuxExecuteExt};
+            use color_eyre::Result;
+
+            #[test]
+            fn from() -> Result<()> {
+                let session = super::testing_session()?;
+                let session_from = Session::from(&session.session_id)?;
+                let output = session_from
+                    .target("display-message")?
+                    .args(["-p", "test"])
+                    .execute()?;
+                assert_eq!(output.trim(), "test");
+                session.kill()?;
+                Ok(())
+            }
+        }
 
         #[test]
         fn target_exits() -> Result<()> {
