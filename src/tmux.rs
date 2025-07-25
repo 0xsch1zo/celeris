@@ -593,34 +593,24 @@ impl Pane {
 
 #[cfg(test)]
 mod tests {
-    use std::ops::Deref;
-
     use super::*;
     const TESTING_SESSION: &str = "__sesh_testing";
 
-    struct CleanSession {
-        inner: Arc<Session>,
-    }
-
-    impl CleanSession {
+    impl Session {
         fn kill(&self) -> Result<()> {
-            self.inner.target("kill-session")?.execute()?;
+            self.target("kill-session")?.execute()?;
             Ok(())
         }
     }
 
-    impl Deref for CleanSession {
-        type Target = Session;
-
-        fn deref(&self) -> &Self::Target {
-            &self.inner
-        }
-    }
-
-    impl Drop for CleanSession {
+    impl Drop for Session {
         fn drop(&mut self) {
-            self.kill()
-                .expect("kill-session failed - environment after test is not cleaned up");
+            if Session::target_exists(&self.session_id)
+                .expect("failed to check if there is a session to kill, cleanup failed")
+            {
+                self.kill()
+                    .expect("kill-session failed - environment after test is not cleaned up");
+            }
         }
     }
 
@@ -633,9 +623,8 @@ mod tests {
         }
     }
 
-    fn testing_session() -> Result<CleanSession> {
-        let session = Session::new(TESTING_SESSION, Root::Default)?;
-        Ok(CleanSession(Arc::try_unwrap(session).unwrap()))
+    fn testing_session() -> Result<Arc<Session>> {
+        Ok(Session::new(TESTING_SESSION, Root::Default)?)
     }
 
     fn selected_pane_id(target: &str) -> Result<String> {
