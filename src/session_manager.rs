@@ -85,7 +85,25 @@ impl<'a> SessionManager<'a> {
         Ok(())
     }
 
-    pub fn run(&self, name: &str) -> Result<()> {
+    pub fn switch(&self, name: &str) -> Result<()> {
+        let name = name.to_owned();
+        let running_sessions = Session::list_sessions()?;
+        let active_session = Session::active_name()?;
+        let running_sessions = running_sessions
+            .into_iter()
+            .filter(|s| Some(s) != active_session.as_ref())
+            .collect_vec();
+        println!("{}", running_sessions.iter().join("\n"));
+        if running_sessions.contains(&name) {
+            let session = Session::from(&name)?;
+            session.attach()?;
+        } else {
+            self.run(&name)?;
+        }
+        Ok(())
+    }
+
+    fn run(&self, name: &str) -> Result<()> {
         let entry = self.entry(name)?;
         script::run(entry).wrap_err("script error")?;
         Ok(())

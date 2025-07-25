@@ -37,8 +37,8 @@ enum Commands {
     },
     /// Edits an existing session config
     EditSession { name: String },
-    /// Loads a session config
-    LoadSession { name: String },
+    /// If a session is running switches to it, if not tries to load it from config
+    Switch { name: String },
     /// Removes a session configuration
     RemoveSession { name: String },
 }
@@ -64,7 +64,7 @@ fn main() -> Result<()> {
             session_manager.create(props)?;
         }
         Commands::EditSession { name } => session_manager.edit(&name)?,
-        Commands::LoadSession { name } => session_manager.run(&name)?,
+        Commands::Switch { name } => session_manager.switch(&name)?,
         Commands::RemoveSession { name } => session_manager.remove(&name)?,
     }
     Ok(())
