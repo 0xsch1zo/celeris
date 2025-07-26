@@ -75,6 +75,8 @@ pub enum SwitchTarget {
     Session(String),
 }
 
+pub use list_sessions::Options as ListSessionsOptions;
+
 pub struct SessionManager<'a> {
     manifest: Manifest,
     config: &'a Config,
@@ -164,25 +166,73 @@ impl<'a> SessionManager<'a> {
         Ok(())
     }
 
-    pub fn list(&self, include_active: bool) -> Result<()> {
-        let manifest_sessions = self.manifest.list().into_iter().map(ToOwned::to_owned);
-        let running_sessions = Session::list_sessions()?;
-        let sessions = manifest_sessions.chain(running_sessions.into_iter());
-
-        let sessions: Vec<_> = match Session::active_name()? {
-            Some(active_session) if !include_active => sessions
-                .filter(|session| active_session != *session)
-                .collect(),
-            Some(active_session) => sessions
-                .map(|session| match session {
-                    active if active_session == session => format!("*{active}"),
-                    _ => session,
-                })
-                .collect(),
-            _ => sessions.collect(),
-        };
-        let sessions = sessions.into_iter().sorted().dedup().join("\n");
-        println!("{sessions}");
+    pub fn list(&self, options: ListSessionsOptions) -> Result<()> {
+        list_sessions::run(&self.manifest, options)?;
         Ok(())
+    }
+}
+
+mod list_sessions {
+    use std::io::{self, Write};
+
+    use crate::manifest::Manifest;
+    use crate::tmux::Session;
+    use color_eyre::Result;
+    use color_eyre::eyre::Context;
+    use itertools::Itertools;
+
+    pub struct Options {
+        pub include_active: bool,
+        pub exclude_running: bool,
+    }
+
+    struct ExcludeInfo {
+        running_sessions: Vec<String>,
+        active_session: Option<String>,
+    }
+
+    impl ExcludeInfo {
+        fn new(running_sessions: Vec<String>, active_session: Option<String>) -> Self {
+            Self {
+                running_sessions,
+                active_session,
+            }
+        }
+    }
+
+    pub fn run(manifest: &Manifest, opts: Options) -> Result<()> {
+        let manifest_sessions = manifest.list().into_iter().map(ToOwned::to_owned);
+        let running_sessions = Session::list_sessions()?;
+        let sessions = manifest_sessions.chain(running_sessions.clone().into_iter());
+        let active_session = Session::active_name()?;
+
+        let exclude_info = ExcludeInfo::new(running_sessions, active_session.clone());
+        let sessions = sessions
+            .filter(|name| exclude(name, &exclude_info, &opts))
+            .map(|session| match session {
+                active if active_session.as_ref() == Some(&session) => format!("*{active}"),
+                _ => session,
+            })
+            .collect_vec();
+        let sessions = sessions.into_iter().sorted().dedup().join("\n");
+        io::stdout()
+            .write_all(sessions.as_bytes())
+            .wrap_err("failed to write sessions to stdout")?;
+        Ok(())
+    }
+
+    fn exclude(session_name: &str, info: &ExcludeInfo, opts: &Options) -> bool {
+        if !opts.include_active
+            && info.active_session.is_some()
+            && session_name == info.active_session.as_ref().unwrap()
+        {
+            return false;
+        }
+
+        if opts.exclude_running && info.running_sessions.contains(&session_name.to_owned()) {
+            return false;
+        }
+
+        true
     }
 }

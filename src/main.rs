@@ -4,9 +4,8 @@ use sesh::cli::{Cli, Commands};
 use sesh::config::Config;
 use sesh::repo_search;
 use sesh::session_manager::{SessionManager, SessionProperties};
+use std::io::{self, Write};
 
-// TODO: somthing something last project feature add
-// TODO: add flag to exclude runnintg session from list-sessions
 fn main() -> Result<()> {
     color_eyre::config::HookBuilder::default()
         .display_env_section(false)
@@ -18,10 +17,9 @@ fn main() -> Result<()> {
 
     match cli.command {
         Commands::FindRepos => {
-            let repos = repo_search::search(&config)?;
-            repos.iter().for_each(|r| println!("{r}"));
+            io::stdout().write_all(repo_search::search(&config)?.join("\n").as_bytes())?
         }
-        Commands::ListSessions { include_active } => session_manager.list(include_active)?,
+        Commands::ListSessions { opts } => session_manager.list(opts.into())?,
         Commands::NewSession { name, path } => {
             let props = SessionProperties::from(name, path);
             session_manager.create(props)?;
