@@ -65,3 +65,14 @@ pub fn scripts_path() -> Result<PathBuf, Error> {
     }
     Ok(scripts_path)
 }
+
+pub fn cache_dir() -> Result<PathBuf, Error> {
+    let cache_dir = dirs::cache_dir()
+        .ok_or(Error::NotFound("cache directory not found".to_owned()))?
+        .join(PROJECT_DIR_NAME);
+    if !cache_dir.exists() {
+        fs::create_dir(&cache_dir)
+            .map_err(|e| Error::FSOperationFailed("failed to create cache dir".to_owned(), e))?;
+    }
+    Ok(cache_dir)
+}

@@ -1,6 +1,7 @@
 use crate::config::Config;
 use crate::manifest;
 use crate::manifest::Manifest;
+use crate::pdirs;
 use crate::script;
 use crate::tmux::Session;
 use crate::utils;
@@ -8,6 +9,7 @@ use color_eyre::Result;
 use color_eyre::eyre::OptionExt;
 use color_eyre::eyre::WrapErr;
 use itertools::Itertools;
+use std::fs;
 use std::path::PathBuf;
 
 #[derive(Clone)]
@@ -44,6 +46,33 @@ impl SessionProperties {
             ))?,
         })
     }
+}
+
+struct LastSessionManger {}
+
+impl LastSessionManger {
+    const LAST_SESSION_FILE: &str = "last_session";
+    fn save(name: &str) -> Result<()> {
+        let last_session_path = pdirs::cache_dir()?.join(Self::LAST_SESSION_FILE);
+        fs::write(last_session_path, name).wrap_err("failed to save the last session")?;
+        Ok(())
+    }
+
+    fn get() -> Result<Option<String>> {
+        let last_session_path = pdirs::cache_dir()?.join(Self::LAST_SESSION_FILE);
+        if !last_session_path.exists() {
+            return Ok(None);
+        }
+        Ok(Some(
+            fs::read_to_string(last_session_path)
+                .wrap_err("failed to retrieve saved last session")?,
+        ))
+    }
+}
+
+pub enum SwitchTarget {
+    LastSession,
+    Session(String),
 }
 
 pub struct SessionManager<'a> {
@@ -85,15 +114,30 @@ impl<'a> SessionManager<'a> {
         Ok(())
     }
 
-    pub fn switch(&self, name: &str) -> Result<()> {
+    pub fn switch(&self, target: SwitchTarget) -> Result<()> {
+        match target {
+            SwitchTarget::LastSession => self.switch_last()?,
+            SwitchTarget::Session(name) => self.switch_core(&name)?,
+        }
+        Ok(())
+    }
+
+    fn switch_last(&self) -> Result<()> {
+        let last = LastSessionManger::get()?.ok_or_eyre("no last session saved")?;
+        self.switch_core(&last)?;
+        Ok(())
+    }
+
+    fn switch_core(&self, name: &str) -> Result<()> {
         let name = name.to_owned();
-        let running_sessions = Session::list_sessions()?;
-        let active_session = Session::active_name()?;
+        let running_sessions =
+            Session::list_sessions().wrap_err("failed to get running sessions")?;
+        let active_session = Session::active_name().wrap_err("failed to get active sesion")?;
         let running_sessions = running_sessions
             .into_iter()
             .filter(|s| Some(s) != active_session.as_ref())
             .collect_vec();
-        println!("{}", running_sessions.iter().join("\n"));
+        LastSessionManger::save(&name).wrap_err("failed to save session name for later use")?;
         if running_sessions.contains(&name) {
             let session = Session::from(&name)?;
             session.attach()?;

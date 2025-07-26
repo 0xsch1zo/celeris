@@ -1,49 +1,12 @@
-use std::path::PathBuf;
-
-use clap::{Parser, Subcommand};
+use clap::Parser;
 use color_eyre::Result;
+use sesh::cli::{Cli, Commands};
 use sesh::config::Config;
 use sesh::repo_search;
 use sesh::session_manager::{SessionManager, SessionProperties};
 
-#[derive(Parser)]
-#[command(about = "A powerful git-aware session-manager written in Rust")]
-#[command(long_about = None)]
-#[command(version = "v0.1.0")]
-#[command(propagate_version = true)]
-struct Cli {
-    #[command(subcommand)]
-    command: Commands,
-}
-
-#[derive(Subcommand)]
-enum Commands {
-    /// Finds repos on search roots declared in the config
-    FindRepos,
-    /// Lists configured sessions
-    ListSessions {
-        #[arg(short, long)]
-        include_active: bool,
-    },
-    /// Creates a session config and opens it in your $EDITOR
-    NewSession {
-        /// Root path of a session. The name will be deduced unless set explictly
-        // TODO: IMPORTANT Consider making this a named argument for clarity, it could be clear
-        // enough now
-        path: PathBuf,
-        /// Custom name for a session
-        #[arg(short, long)]
-        name: Option<String>,
-    },
-    /// Edits an existing session config
-    EditSession { name: String },
-    /// If a session is running switches to it, if not tries to load it from config
-    Switch { name: String },
-    /// Removes a session configuration
-    RemoveSession { name: String },
-}
-
 // TODO: somthing something last project feature add
+// TODO: add flag to exclude runnintg session from list-sessions
 fn main() -> Result<()> {
     color_eyre::config::HookBuilder::default()
         .display_env_section(false)
@@ -64,7 +27,7 @@ fn main() -> Result<()> {
             session_manager.create(props)?;
         }
         Commands::EditSession { name } => session_manager.edit(&name)?,
-        Commands::Switch { name } => session_manager.switch(&name)?,
+        Commands::Switch { target } => session_manager.switch(target.into())?,
         Commands::RemoveSession { name } => session_manager.remove(&name)?,
     }
     Ok(())
