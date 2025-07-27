@@ -132,9 +132,14 @@ impl<'a> SessionManager<'a> {
 
     fn switch_core(&self, name: &str) -> Result<()> {
         let name = name.to_owned();
+        let active_session = Session::active_name().wrap_err("failed to get active sesion")?;
+        if Some(&name) == active_session.as_ref() {
+            println!("info: session with that name is already attached. Aborting switch");
+            return Ok(());
+        }
+
         let running_sessions =
             Session::list_sessions().wrap_err("failed to get running sessions")?;
-        let active_session = Session::active_name().wrap_err("failed to get active sesion")?;
         let running_sessions = running_sessions
             .into_iter()
             .filter(|s| Some(s) != active_session.as_ref())
@@ -200,6 +205,7 @@ mod list_sessions {
         }
     }
 
+    // TODO: make a good interface for the functionality
     pub fn run(manifest: &Manifest, opts: Options) -> Result<()> {
         let manifest_sessions = manifest.list().into_iter().map(ToOwned::to_owned);
         let running_sessions = Session::list_sessions()?;
