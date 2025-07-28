@@ -23,8 +23,6 @@ pub enum Commands {
     },
     /// Create a session config and open in $EDITOR
     NewSession {
-        // TODO: IMPORTANT Consider making this a named argument for clarity, it could be clear
-        // enough now
         /// Root path of a session. By default the name is deduced automatically
         path: PathBuf,
         /// Set custom name for a session
@@ -68,15 +66,20 @@ impl Into<SwitchTarget> for CliSwitchTarget {
 }
 
 #[derive(Args)]
+#[group(required = false, multiple = false)]
 pub struct ListSessionsOptions {
-    /// Include currently active tmux session in the listing(if exists). Signified with a *
+    /// Include currently active tmux session in the listing(if exists). Signified with an asterisk
+    /// at the end
     /// before the name
     #[arg(short, long)]
     include_active: bool,
     /// Exclude currently running tmux sessions. Sessions will always be loaded from the
     /// config.
-    #[arg(short, long, conflicts_with = "include_active")]
+    #[arg(short, long)]
     exclude_running: bool,
+
+    #[arg(short, long)]
+    only_running: bool,
 }
 
 impl Into<MgrListSessionsOptions> for ListSessionsOptions {
@@ -84,6 +87,7 @@ impl Into<MgrListSessionsOptions> for ListSessionsOptions {
         MgrListSessionsOptions {
             include_active: self.include_active,
             exclude_running: self.exclude_running,
+            only_running: self.only_running,
         }
     }
 }

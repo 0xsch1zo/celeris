@@ -189,6 +189,7 @@ mod list_sessions {
     pub struct Options {
         pub include_active: bool,
         pub exclude_running: bool,
+        pub only_running: bool,
     }
 
     struct ExcludeInfo {
@@ -216,11 +217,11 @@ mod list_sessions {
         let sessions = sessions
             .filter(|name| exclude(name, &exclude_info, &opts))
             .map(|session| match session {
-                active if active_session.as_ref() == Some(&session) => format!("*{active}"),
+                active if active_session.as_ref() == Some(&session) => format!("{active}*"),
                 _ => session,
             })
             .collect_vec();
-        let sessions = sessions.into_iter().sorted().dedup().join("\n");
+        let sessions = sessions.into_iter().sorted().dedup().join(" ");
         io::stdout()
             .write_all(sessions.as_bytes())
             .wrap_err("failed to write sessions to stdout")?;
@@ -228,6 +229,10 @@ mod list_sessions {
     }
 
     fn exclude(session_name: &str, info: &ExcludeInfo, opts: &Options) -> bool {
+        if opts.only_running {
+            return info.running_sessions.contains(&session_name.to_owned());
+        }
+
         if !opts.include_active
             && info.active_session.is_some()
             && session_name == info.active_session.as_ref().unwrap()

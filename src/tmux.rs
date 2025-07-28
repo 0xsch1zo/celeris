@@ -166,7 +166,6 @@ impl Session {
         }))
     }
 
-    // TODO: Maybe replace with an enum
     fn target(&self, command: &str) -> Result<Command> {
         let target = format!("{}:", self.session_id);
         tmux_target_command(&target, command)

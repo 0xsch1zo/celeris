@@ -112,7 +112,6 @@ impl PartialEq for Entry {
     }
 }
 
-// TODO: maybe use a map
 impl Entry {
     pub fn new(name: String, session_path: PathBuf) -> eyre::Result<Self> {
         let script_path = Self::calc_script_path(&session_path)?;
@@ -190,7 +189,6 @@ impl Manifest {
         codec.deserialize_from_file(&path)
     }
 
-    // TODO: maybe handle the manifest file being in a bad state
     pub fn new() -> Result<Self, Error> {
         let path = Self::path()?;
         if path.exists() {
