@@ -187,6 +187,7 @@ mod list_sessions {
     use itertools::Itertools;
 
     pub struct Options {
+        pub tmux_format: bool,
         pub include_active: bool,
         pub exclude_running: bool,
         pub only_running: bool,
@@ -221,7 +222,14 @@ mod list_sessions {
                 _ => session,
             })
             .collect_vec();
-        let sessions = sessions.into_iter().sorted().dedup().join(" ");
+        let sessions = sessions
+            .into_iter()
+            .sorted()
+            .dedup()
+            .join(match opts.tmux_format {
+                true => " ",
+                false => "\n",
+            });
         io::stdout()
             .write_all(sessions.as_bytes())
             .wrap_err("failed to write sessions to stdout")?;

@@ -36,11 +36,15 @@ const PROJECT_DIR_NAME: &'static str = "sesh";
 pub fn config_dir() -> Result<PathBuf, Error> {
     let path: PathBuf = dirs::config_dir()
         // TODO: add flag do specify alt config location, include that in the error message
-        .ok_or(Error::NotFound("config directory".to_owned()))?
+        .ok_or(Error::NotFound(
+            "local config directory, pass -c/--config to set custom config path".to_owned(),
+        ))?
         .join(PROJECT_DIR_NAME);
 
     if !path.exists() {
-        return Err(Error::NotFound("config directory".to_owned()));
+        return Err(Error::NotFound(
+            "local config directory, pass -c/--config to set custom config path".to_owned(),
+        ));
     }
     Ok(path)
 }
