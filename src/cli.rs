@@ -8,6 +8,9 @@ use std::path::PathBuf;
 #[command(version = "v0.1.0")]
 #[command(propagate_version = true)]
 pub struct Cli {
+    #[arg(short, long)]
+    pub config: Option<PathBuf>,
+
     #[command(subcommand)]
     pub command: Commands,
 }
@@ -66,8 +69,29 @@ impl Into<SwitchTarget> for CliSwitchTarget {
 }
 
 #[derive(Args)]
-#[group(required = false, multiple = false)]
 pub struct ListSessionsOptions {
+    /// Print the seessions in a format that can easily be used in a status bar of tmux
+    #[arg(short, long)]
+    tmux_format: bool,
+
+    #[command(flatten)]
+    conflicting: ListSessionsConflicting,
+}
+
+impl Into<MgrListSessionsOptions> for ListSessionsOptions {
+    fn into(self) -> MgrListSessionsOptions {
+        MgrListSessionsOptions {
+            tmux_format: self.tmux_format,
+            include_active: self.conflicting.include_active,
+            exclude_running: self.conflicting.exclude_running,
+            only_running: self.conflicting.only_running,
+        }
+    }
+}
+
+#[derive(Args)]
+#[group(required = false, multiple = false)]
+pub struct ListSessionsConflicting {
     /// Include currently active tmux session in the listing(if exists). Signified with an asterisk
     /// at the end
     /// before the name
@@ -80,14 +104,4 @@ pub struct ListSessionsOptions {
 
     #[arg(short, long)]
     only_running: bool,
-}
-
-impl Into<MgrListSessionsOptions> for ListSessionsOptions {
-    fn into(self) -> MgrListSessionsOptions {
-        MgrListSessionsOptions {
-            include_active: self.include_active,
-            exclude_running: self.exclude_running,
-            only_running: self.only_running,
-        }
-    }
 }

@@ -4,7 +4,7 @@ use color_eyre::{Result, eyre};
 use eyre::eyre;
 use serde::Deserialize;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 #[derive(Deserialize, Debug)]
 pub struct Config {
@@ -45,9 +45,9 @@ pub enum PathType {
 }
 
 impl Config {
-    pub fn new() -> Result<Self> {
+    pub fn new(custom_path: Option<PathBuf>) -> Result<Self> {
         const CONFIG_FILE: &'static str = "config.toml";
-        let config_path = pdirs::config_dir()?.join(CONFIG_FILE);
+        let config_path = custom_path.unwrap_or(pdirs::config_dir()?.join(CONFIG_FILE));
         let config = fs::read_to_string(&config_path).wrap_err("main sesh config not found")?;
 
         let config: Config = toml::from_str(&config).wrap_err("parsing error")?;

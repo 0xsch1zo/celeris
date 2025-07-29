@@ -11,9 +11,9 @@ fn main() -> Result<()> {
         .display_env_section(false)
         .install()?;
 
-    let config = Config::new()?;
-    let mut session_manager = SessionManager::new(&config)?;
     let cli = Cli::parse();
+    let config = Config::new(cli.config)?;
+    let mut session_manager = SessionManager::new(&config)?;
 
     match cli.command {
         Commands::FindRepos => {
