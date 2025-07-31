@@ -1,21 +1,20 @@
-use crate::pdirs;
+use crate::directory_manager::{self, DirectoryManager};
 use crate::utils;
-use color_eyre::eyre::{self, Context};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::error;
 use std::fmt::Display;
 use std::fs;
-use std::fs::File;
 use std::io;
 use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 
 #[derive(Debug)]
 pub enum Error {
     NotFound(String),
     AlreadyExists(String),
-    CoreDirectoryErr(pdirs::Error),
+    CoreDirectoryErr(directory_manager::Error),
     FSOperationFaiure(String, io::Error), // break down to pieces
     SerializeFailure(toml::ser::Error),
     DeserializeFailure(toml::de::Error),
@@ -68,8 +67,8 @@ impl From<toml::de::Error> for Error {
     }
 }
 
-impl From<pdirs::Error> for Error {
-    fn from(value: pdirs::Error) -> Self {
+impl From<directory_manager::Error> for Error {
+    fn from(value: directory_manager::Error) -> Self {
         Error::CoreDirectoryErr(value)
     }
 }
@@ -101,39 +100,26 @@ impl<T: DeserializeOwned + Serialize> Codec<T> for TomlCodec {
 pub struct Entry {
     name: String,
     session_path: PathBuf,
-    script_path: PathBuf,
+    script_name: String,
 }
 
 impl PartialEq for Entry {
     fn eq(&self, other: &Self) -> bool {
         self.name == other.name
-            || self.script_path == other.script_path
+            || self.script_name == other.script_name
             || self.session_path == other.session_path
     }
 }
 
 impl Entry {
-    pub fn new(name: String, session_path: PathBuf) -> eyre::Result<Self> {
-        let script_path = Self::calc_script_path(&session_path)?;
-
-        File::create_new(&script_path).wrap_err(format!(
-            "failed to create a script file for session: {name}"
-        ))?;
-
-        Ok(Self {
+    pub fn new(name: String, session_path: PathBuf) -> Self {
+        const DELIMETER: &str = "_";
+        let script_name = name.replace("/", DELIMETER);
+        Self {
             name,
-            script_path,
+            script_name,
             session_path,
-        })
-    }
-
-    fn calc_script_path(session_path: &Path) -> eyre::Result<PathBuf> {
-        let hash = format!(
-            "{:x}",
-            md5::compute(utils::path_to_string(session_path).wrap_err("failed to hash path")?,)
-        );
-
-        Ok(pdirs::scripts_path()?.join(hash).with_extension("rhai"))
+        }
     }
 
     pub fn name(&self) -> &str {
@@ -144,62 +130,62 @@ impl Entry {
         self.session_path.as_path()
     }
 
-    pub fn script_path(&self) -> &Path {
-        self.script_path.as_path()
+    pub fn script_name(&self) -> &str {
+        &self.script_name
     }
+}
+
+pub struct Manifest {
+    fields: ManifestFields,
+    fields_codec: Box<dyn Codec<ManifestFields>>,
+    dir_mgr: Rc<DirectoryManager>,
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct Manifest {
+struct ManifestFields {
     entries: Vec<Entry>,
-    #[serde(
-        skip_serializing,
-        skip_deserializing,
-        default = "default_manifest_codec"
-    )]
-    codec: Box<dyn Codec<Manifest>>,
-}
-
-impl Default for Manifest {
-    fn default() -> Self {
-        Self {
-            entries: Vec::new(),
-            codec: Box::new(TomlCodec {}),
-        }
-    }
-}
-
-fn default_manifest_codec() -> Box<dyn Codec<Manifest>> {
-    Box::new(TomlCodec {})
 }
 
 impl Manifest {
-    fn path() -> Result<PathBuf, Error> {
+    fn path(dir_mgr: &DirectoryManager) -> Result<PathBuf, Error> {
         const MANIFEST_FILE: &'static str = "manifest.toml";
-        Ok(pdirs::internals_dir()?.join(MANIFEST_FILE))
+        Ok(dir_mgr.internals_dir()?.join(MANIFEST_FILE))
     }
 
     fn serialize(&self) -> Result<(), Error> {
-        let path = Self::path()?;
-        self.codec.serialize_to_file(self, &path)
+        let path = Self::path(&self.dir_mgr)?;
+        self.fields_codec.serialize_to_file(&self.fields, &path)
     }
 
-    fn deserialize(codec: Box<dyn Codec<Manifest>>) -> Result<Manifest, Error> {
-        let path = Self::path()?;
+    fn deserialize(
+        codec: Box<dyn Codec<ManifestFields>>,
+        dir_mgr: &DirectoryManager,
+    ) -> Result<ManifestFields, Error> {
+        let path = Self::path(dir_mgr)?;
         codec.deserialize_from_file(&path)
     }
 
-    pub fn new() -> Result<Self, Error> {
-        let path = Self::path()?;
+    pub fn new(dir_mgr: Rc<DirectoryManager>) -> Result<Self, Error> {
+        let path = Self::path(&dir_mgr)?;
         if path.exists() {
-            Self::deserialize(Manifest::default().codec)
+            Ok(Self {
+                fields: Self::deserialize(Box::new(TomlCodec {}), &dir_mgr)?,
+                fields_codec: Box::new(TomlCodec {}),
+                dir_mgr,
+            })
         } else {
-            Ok(Manifest::default())
+            Ok(Manifest {
+                fields: ManifestFields {
+                    entries: Vec::new(),
+                },
+                fields_codec: Box::new(TomlCodec {}),
+                dir_mgr,
+            })
         }
     }
 
     pub fn deduce_name(&self, path: &Path) -> Result<String, Error> {
-        if self.entries.iter().any(|e| e.session_path == path) {
+        if self.fields.entries.iter().any(|e| e.session_path == path) {
             return Err(Error::AlreadyExists(path.to_string_lossy().to_string()));
         }
 
@@ -231,26 +217,31 @@ impl Manifest {
     }
 
     pub fn push(&mut self, entry: Entry) -> Result<(), Error> {
-        if self.entries.contains(&entry) {
+        if self.fields.entries.contains(&entry) {
             return Err(Error::AlreadyExists(entry.name));
         }
 
-        self.entries.push(entry);
+        self.fields.entries.push(entry);
         Self::serialize(self)?;
         Ok(())
     }
 
     pub fn entry(&self, name: &str) -> Option<&Entry> {
-        self.entries.iter().find(|entry| entry.name == name)
+        self.fields.entries.iter().find(|entry| entry.name == name)
     }
 
     pub fn contains(&self, name: &str) -> bool {
-        self.entries.iter().find(|s| s.name == name).is_some()
+        self.fields
+            .entries
+            .iter()
+            .find(|s| s.name == name)
+            .is_some()
     }
 
     pub fn remove(&mut self, name: &str) -> Result<(), Error> {
-        self.entries.remove(
-            self.entries
+        self.fields.entries.remove(
+            self.fields
+                .entries
                 .iter()
                 .position(|e| e.name == name)
                 .ok_or(Error::NotFound(name.to_owned()))?,
@@ -261,7 +252,11 @@ impl Manifest {
     }
 
     pub fn list(&self) -> Vec<&String> {
-        self.entries.iter().map(|e| &e.name).collect::<Vec<_>>()
+        self.fields
+            .entries
+            .iter()
+            .map(|e| &e.name)
+            .collect::<Vec<_>>()
     }
 }
 
@@ -272,26 +267,27 @@ mod tests {
 
     struct MockCodec {}
 
-    impl Codec<Manifest> for MockCodec {
+    impl Codec<ManifestFields> for MockCodec {
         fn serialize_to_file(
             &self,
-            _object: &Manifest,
+            _object: &ManifestFields,
             _path: &Path,
         ) -> std::result::Result<(), Error> {
             Ok(())
         }
 
-        fn deserialize_from_file(&self, _path: &Path) -> std::result::Result<Manifest, Error> {
-            Ok(Manifest::default())
+        fn deserialize_from_file(
+            &self,
+            _path: &Path,
+        ) -> std::result::Result<ManifestFields, Error> {
+            Ok(ManifestFields {
+                entries: Vec::new(),
+            })
         }
     }
 
     fn test_entry(name: &str) -> Result<Entry> {
-        Ok(Entry {
-            name: name.to_owned(),
-            script_path: PathBuf::new(),
-            session_path: PathBuf::new(),
-        })
+        Ok(Entry::new(name.to_owned(), PathBuf::new()))
     }
 
     fn manifest_with_names(names: Vec<&'static str>) -> Result<Manifest> {
@@ -300,8 +296,9 @@ mod tests {
             .map(|name| test_entry(name))
             .collect::<Result<Vec<_>>>()?;
         let manifest = Manifest {
-            entries: entries,
-            codec: Box::new(MockCodec {}),
+            fields: ManifestFields { entries: entries },
+            fields_codec: Box::new(MockCodec {}),
+            dir_mgr: DirectoryManager::new().into(),
         };
         Ok(manifest)
     }

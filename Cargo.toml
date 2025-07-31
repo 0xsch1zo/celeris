@@ -13,7 +13,7 @@ color-eyre = "0.6.5"
 md5 = "0.7.0"
 itertools = "0.14.0"
 rhai = { version = "1.22.2", features = ["sync"] }
-clap = { version = "4.5.40", features = ["derive"] }
+clap = { version = "4.5.40", features = ["derive", "env"] }
 
 [dev-dependencies]
 test-with = "0.15.2"

@@ -64,6 +64,7 @@ pub fn server_running() -> Result<bool> {
     Ok(status.success())
 }
 
+// TODO: check if the directions are right
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub enum Direction {
     Horizontal,

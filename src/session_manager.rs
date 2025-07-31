@@ -2,7 +2,7 @@ use crate::config::Config;
 use crate::directory_manager::DirectoryManager;
 use crate::manifest;
 use crate::manifest::Manifest;
-use crate::script;
+use crate::script::ScriptManager;
 use crate::tmux::Session;
 use crate::utils;
 use color_eyre::Result;
@@ -11,6 +11,7 @@ use color_eyre::eyre::WrapErr;
 use itertools::Itertools;
 use std::fs;
 use std::path::PathBuf;
+use std::rc::Rc;
 
 #[derive(Clone)]
 pub enum Name {
@@ -48,12 +49,12 @@ impl SessionProperties {
     }
 }
 
-struct LastSessionManger<'a> {
-    dir_mgr: &'a DirectoryManager,
+struct LastSessionManger {
+    dir_mgr: Rc<DirectoryManager>,
 }
 
-impl<'a> LastSessionManger<'a> {
-    fn new(dir_mgr: &'a DirectoryManager) -> Self {
+impl LastSessionManger {
+    fn new(dir_mgr: Rc<DirectoryManager>) -> Self {
         Self { dir_mgr }
     }
     const LAST_SESSION_FILE: &'static str = "last_session";
@@ -82,20 +83,22 @@ pub enum SwitchTarget {
 
 pub use list_sessions::Options as ListSessionsOptions;
 
-pub struct SessionManager<'a> {
+pub struct SessionManager {
     manifest: Manifest,
-    config: &'a Config,
-    dir_mgr: &'a DirectoryManager,
-    last_session_mgr: LastSessionManger<'a>,
+    config: Rc<Config>,
+    last_session_mgr: LastSessionManger,
+    script_mgr: ScriptManager,
 }
 
-impl<'a> SessionManager<'a> {
-    pub fn new(config: &'a Config, dir_mgr: &'a DirectoryManager) -> Result<Self> {
+// TODO: the program can be in a weird state when it it errors out during an action that get's
+// saved figure out if somethig can be done
+impl SessionManager {
+    pub fn new(config: Rc<Config>, dir_mgr: Rc<DirectoryManager>) -> Result<Self> {
         Ok(Self {
-            manifest: Manifest::new()?,
+            manifest: Manifest::new(Rc::clone(&dir_mgr))?,
             config,
-            dir_mgr,
-            last_session_mgr: LastSessionManger::new(dir_mgr),
+            last_session_mgr: LastSessionManger::new(Rc::clone(&dir_mgr)),
+            script_mgr: ScriptManager::new(dir_mgr),
         })
     }
 
@@ -109,19 +112,22 @@ impl<'a> SessionManager<'a> {
     pub fn create(&mut self, mut props: SessionProperties) -> Result<()> {
         props.path = utils::expand_path(props.path)?;
         let name = props.name(&self.manifest)?;
-        let entry = manifest::Entry::new(name.clone(), props.path)
-            .wrap_err("failed to create session entry")?;
+        let entry = manifest::Entry::new(name.clone(), props.path);
         self.manifest
             .push(entry)
             .wrap_err("failed to add session")?;
         let entry = self.entry(&name)?; // only ref
-        script::edit(entry, &self.config)?;
+        self.script_mgr.create(entry).wrap_err(format!(
+            "failed to create script for session with name: {}",
+            name
+        ))?;
+        self.script_mgr.edit(entry, &self.config)?;
         Ok(())
     }
 
     pub fn edit(&self, name: &str) -> Result<()> {
         let entry = self.entry(name)?;
-        script::edit(entry, &self.config)?;
+        self.script_mgr.edit(entry, &self.config)?;
         Ok(())
     }
 
@@ -170,7 +176,7 @@ impl<'a> SessionManager<'a> {
 
     fn run(&self, name: &str) -> Result<()> {
         let entry = self.entry(name)?;
-        script::run(entry).wrap_err("script error")?;
+        self.script_mgr.run(entry).wrap_err("script error")?;
         Ok(())
     }
 
@@ -179,6 +185,8 @@ impl<'a> SessionManager<'a> {
     }
 
     pub fn remove(&mut self, name: &str) -> Result<()> {
+        let entry = self.entry(name)?;
+        self.script_mgr.remove(entry)?;
         self.manifest
             .remove(name)
             .wrap_err("failed to remove session")?;

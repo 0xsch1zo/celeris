@@ -6,6 +6,7 @@ use sesh::directory_manager::DirectoryManager;
 use sesh::repo_search;
 use sesh::session_manager::{SessionManager, SessionProperties};
 use std::io::{self, Write};
+use std::rc::Rc;
 
 fn main() -> Result<()> {
     color_eyre::config::HookBuilder::default()
@@ -22,8 +23,8 @@ fn main() -> Result<()> {
         dir_mgr.set_config_dir(cache_dir)?;
     }
 
-    let config = Config::new(&dir_mgr)?;
-    let mut session_manager = SessionManager::new(&config, &dir_mgr)?;
+    let config = Rc::new(Config::new(&dir_mgr)?);
+    let mut session_manager = SessionManager::new(Rc::clone(&config), Rc::new(dir_mgr))?;
 
     match cli.command {
         Commands::FindRepos => {
