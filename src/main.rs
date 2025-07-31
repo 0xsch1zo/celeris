@@ -2,6 +2,7 @@ use clap::Parser;
 use color_eyre::Result;
 use sesh::cli::{Cli, Commands};
 use sesh::config::Config;
+use sesh::directory_manager::DirectoryManager;
 use sesh::repo_search;
 use sesh::session_manager::{SessionManager, SessionProperties};
 use std::io::{self, Write};
@@ -12,8 +13,17 @@ fn main() -> Result<()> {
         .install()?;
 
     let cli = Cli::parse();
-    let config = Config::new(cli.config)?;
-    let mut session_manager = SessionManager::new(&config)?;
+    let mut dir_mgr = DirectoryManager::new();
+    if let Some(config_dir) = cli.config_dir {
+        dir_mgr.set_config_dir(config_dir)?;
+    }
+
+    if let Some(cache_dir) = cli.cache_dir {
+        dir_mgr.set_config_dir(cache_dir)?;
+    }
+
+    let config = Config::new(&dir_mgr)?;
+    let mut session_manager = SessionManager::new(&config, &dir_mgr)?;
 
     match cli.command {
         Commands::FindRepos => {

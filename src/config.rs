@@ -1,10 +1,10 @@
-use crate::pdirs;
+use crate::directory_manager::DirectoryManager;
 use color_eyre::eyre::Context;
 use color_eyre::{Result, eyre};
 use eyre::eyre;
 use serde::Deserialize;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 #[derive(Deserialize, Debug)]
 pub struct Config {
@@ -45,13 +45,11 @@ pub enum PathType {
 }
 
 impl Config {
-    pub fn new(custom_path: Option<PathBuf>) -> Result<Self> {
+    pub fn new(dir_mgr: &DirectoryManager) -> Result<Self> {
         const CONFIG_FILE: &'static str = "config.toml";
-        let config_path = custom_path.unwrap_or(pdirs::config_dir()?.join(CONFIG_FILE));
+        let config_path = dir_mgr.config_dir()?.join(CONFIG_FILE);
         let config = fs::read_to_string(&config_path).wrap_err("main sesh config not found")?;
-
         let config: Config = toml::from_str(&config).wrap_err("parsing error")?;
-
         Self::validate_config(&config)?;
         Ok(config)
     }

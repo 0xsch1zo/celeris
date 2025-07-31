@@ -8,8 +8,13 @@ use std::path::PathBuf;
 #[command(version = "v0.1.0")]
 #[command(propagate_version = true)]
 pub struct Cli {
+    /// Set a custom directory where the main session and scripts are stored
     #[arg(short, long)]
-    pub config: Option<PathBuf>,
+    pub config_dir: Option<PathBuf>,
+
+    /// Set a custom directory where last session opened is cached
+    #[arg(short, long)]
+    pub cache_dir: Option<PathBuf>,
 
     #[command(subcommand)]
     pub command: Commands,

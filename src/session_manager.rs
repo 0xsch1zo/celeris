@@ -1,7 +1,7 @@
 use crate::config::Config;
+use crate::directory_manager::DirectoryManager;
 use crate::manifest;
 use crate::manifest::Manifest;
-use crate::pdirs;
 use crate::script;
 use crate::tmux::Session;
 use crate::utils;
@@ -48,18 +48,23 @@ impl SessionProperties {
     }
 }
 
-struct LastSessionManger {}
+struct LastSessionManger<'a> {
+    dir_mgr: &'a DirectoryManager,
+}
 
-impl LastSessionManger {
-    const LAST_SESSION_FILE: &str = "last_session";
-    fn save(name: &str) -> Result<()> {
-        let last_session_path = pdirs::cache_dir()?.join(Self::LAST_SESSION_FILE);
+impl<'a> LastSessionManger<'a> {
+    fn new(dir_mgr: &'a DirectoryManager) -> Self {
+        Self { dir_mgr }
+    }
+    const LAST_SESSION_FILE: &'static str = "last_session";
+    fn save(&self, name: &str) -> Result<()> {
+        let last_session_path = self.dir_mgr.cache_dir()?.join(Self::LAST_SESSION_FILE);
         fs::write(last_session_path, name).wrap_err("failed to save the last session")?;
         Ok(())
     }
 
-    fn get() -> Result<Option<String>> {
-        let last_session_path = pdirs::cache_dir()?.join(Self::LAST_SESSION_FILE);
+    fn get(&self) -> Result<Option<String>> {
+        let last_session_path = self.dir_mgr.cache_dir()?.join(Self::LAST_SESSION_FILE);
         if !last_session_path.exists() {
             return Ok(None);
         }
@@ -80,13 +85,17 @@ pub use list_sessions::Options as ListSessionsOptions;
 pub struct SessionManager<'a> {
     manifest: Manifest,
     config: &'a Config,
+    dir_mgr: &'a DirectoryManager,
+    last_session_mgr: LastSessionManger<'a>,
 }
 
 impl<'a> SessionManager<'a> {
-    pub fn new(config: &'a Config) -> Result<Self> {
+    pub fn new(config: &'a Config, dir_mgr: &'a DirectoryManager) -> Result<Self> {
         Ok(Self {
             manifest: Manifest::new()?,
             config,
+            dir_mgr,
+            last_session_mgr: LastSessionManger::new(dir_mgr),
         })
     }
 
@@ -125,7 +134,10 @@ impl<'a> SessionManager<'a> {
     }
 
     fn switch_last(&self) -> Result<()> {
-        let last = LastSessionManger::get()?.ok_or_eyre("no last session saved")?;
+        let last = self
+            .last_session_mgr
+            .get()?
+            .ok_or_eyre("no last session saved")?;
         self.switch_core(&last)?;
         Ok(())
     }
@@ -144,7 +156,9 @@ impl<'a> SessionManager<'a> {
             .into_iter()
             .filter(|s| Some(s) != active_session.as_ref())
             .collect_vec();
-        LastSessionManger::save(&name).wrap_err("failed to save session name for later use")?;
+        self.last_session_mgr
+            .save(&name)
+            .wrap_err("failed to save session name for later use")?;
         if running_sessions.contains(&name) {
             let session = Session::from(&name)?;
             session.attach()?;
