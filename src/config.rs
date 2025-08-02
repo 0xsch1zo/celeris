@@ -48,7 +48,9 @@ impl Config {
     pub fn new(dir_mgr: &DirectoryManager) -> Result<Self> {
         const CONFIG_FILE: &'static str = "config.toml";
         let config_path = dir_mgr.config_dir()?.join(CONFIG_FILE);
-        let config = fs::read_to_string(&config_path).wrap_err("main sesh config not found")?;
+        let config = fs::read_to_string(&config_path).wrap_err(format!(
+            "main sesh config not found in path: {config_path:?}"
+        ))?;
         let config: Config = toml::from_str(&config).wrap_err("parsing error")?;
         Self::validate_config(&config)?;
         Ok(config)

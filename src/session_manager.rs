@@ -13,6 +13,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::rc::Rc;
 
+// TODO: make project mamagner which encompasses manifest and script manager
 #[derive(Clone)]
 pub enum Name {
     Deduced,

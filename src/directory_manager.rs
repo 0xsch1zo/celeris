@@ -71,26 +71,16 @@ impl DirectoryManager {
     pub fn config_dir(&self) -> Result<PathBuf, Error> {
         let default_path = dirs::config_dir();
         let default_path = default_path.as_ref();
-        let path = self
-            .custom_config_path
-            .as_ref()
-            .or_else(|| default_path)
-            .ok_or(Error::NotFound(
-                "local config directory, pass -c/--config to set custom config path".to_owned(),
-            ))?
-            .join(PROJECT_DIR_NAME);
+        let path = match (self.custom_config_path.as_ref(), default_path) {
+            (Some(path), _) => path.to_owned(),
+            (None, Some(default_path)) => default_path.join(PROJECT_DIR_NAME),
+            (None, None) => {
+                return Err(Error::NotFound(
+                    "local config directory, pass -c/--config to set custom config path".to_owned(),
+                ));
+            }
+        };
 
-        if !path.exists() {
-            fs::create_dir(&path).map_err(|e| {
-                Error::FSOperationFailed("failed to create internals directory".to_owned(), e)
-            })?
-        }
-        Ok(path)
-    }
-
-    pub fn internals_dir(&self) -> Result<PathBuf, Error> {
-        const INTERNALS_DIR: &'static str = "internals";
-        let path = self.config_dir()?.join(INTERNALS_DIR);
         if !path.exists() {
             fs::create_dir(&path).map_err(|e| {
                 Error::FSOperationFailed("failed to create internals directory".to_owned(), e)
@@ -113,13 +103,18 @@ impl DirectoryManager {
     pub fn cache_dir(&self) -> Result<PathBuf, Error> {
         let default_path = dirs::cache_dir();
         let default_path = default_path.as_ref();
-        let path = self
-            .custom_config_path
-            .as_ref()
-            .or_else(|| default_path)
-            .ok_or(Error::NotFound("local cache directory".to_owned()))?
-            .join(PROJECT_DIR_NAME);
-        if !path.exists() {
+        let path = match (self.custom_cache_path.as_ref(), default_path) {
+            (Some(path), _) => path.to_owned(),
+            (None, Some(default_path)) => default_path.join(PROJECT_DIR_NAME),
+            (None, None) => {
+                return Err(Error::NotFound(
+                    "local cache directory, pass -a/--cache-dir to set custom cache path"
+                        .to_owned(),
+                ));
+            }
+        };
+
+        if self.custom_cache_path.is_some() && !path.exists() {
             fs::create_dir(&path).map_err(|e| {
                 Error::FSOperationFailed("failed to create cache dir".to_owned(), e)
             })?;

@@ -20,7 +20,7 @@ fn main() -> Result<()> {
     }
 
     if let Some(cache_dir) = cli.cache_dir {
-        dir_mgr.set_config_dir(cache_dir)?;
+        dir_mgr.set_cache_dir(cache_dir)?;
     }
 
     let config = Rc::new(Config::new(&dir_mgr)?);

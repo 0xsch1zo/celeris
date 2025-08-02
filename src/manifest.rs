@@ -148,8 +148,8 @@ struct ManifestFields {
 
 impl Manifest {
     fn path(dir_mgr: &DirectoryManager) -> Result<PathBuf, Error> {
-        const MANIFEST_FILE: &'static str = "manifest.toml";
-        Ok(dir_mgr.internals_dir()?.join(MANIFEST_FILE))
+        const MANIFEST_FILE: &'static str = ".manifest.toml";
+        Ok(dir_mgr.config_dir()?.join(MANIFEST_FILE))
     }
 
     fn serialize(&self) -> Result<(), Error> {
