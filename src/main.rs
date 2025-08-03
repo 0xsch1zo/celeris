@@ -24,7 +24,7 @@ fn main() -> Result<()> {
     }
 
     let config = Rc::new(Config::new(&dir_mgr)?);
-    let mut session_manager = SessionManager::new(Rc::clone(&config), Rc::new(dir_mgr))?;
+    let session_manager = SessionManager::new(Rc::clone(&config), Rc::new(dir_mgr))?;
 
     match cli.command {
         Commands::FindRepos => {
@@ -37,7 +37,9 @@ fn main() -> Result<()> {
         }
         Commands::EditSession { name } => session_manager.edit(&name)?,
         Commands::Switch { target } => session_manager.switch(target.into())?,
-        Commands::RemoveSession { name } => session_manager.remove(&name)?,
+        Commands::RemoveSession { name } => {
+            session_manager.remove(&name)?;
+        }
     }
     Ok(())
 }

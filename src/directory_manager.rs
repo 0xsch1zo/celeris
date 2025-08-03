@@ -34,6 +34,7 @@ impl error::Error for Error {
 
 const PROJECT_DIR_NAME: &'static str = "sesh";
 
+#[derive(Debug)]
 pub struct DirectoryManager {
     custom_config_path: Option<PathBuf>,
     custom_cache_path: Option<PathBuf>,

@@ -110,20 +110,23 @@ impl SessionManager {
             .ok_or_eyre(format!("session not found: {}", name))?)
     }
 
-    pub fn create(&mut self, mut props: SessionProperties) -> Result<()> {
+    pub fn create(self, mut props: SessionProperties) -> Result<Self> {
+        // lot's of stuff, refactor this
         props.path = utils::expand_path(props.path)?;
         let name = props.name(&self.manifest)?;
         let entry = manifest::Entry::new(name.clone(), props.path);
-        self.manifest
-            .push(entry)
+        let manifest = self
+            .manifest
+            .extend(entry)
             .wrap_err("failed to add session")?;
-        let entry = self.entry(&name)?; // only ref
-        self.script_mgr.create(entry).wrap_err(format!(
+        let session_mgr = Self { manifest, ..self };
+        let entry = session_mgr.entry(&name)?; // only ref
+        session_mgr.script_mgr.create(entry).wrap_err(format!(
             "failed to create script for session with name: {}",
             name
         ))?;
-        self.script_mgr.edit(entry, &self.config)?;
-        Ok(())
+        session_mgr.script_mgr.edit(entry, &session_mgr.config)?;
+        Ok(session_mgr)
     }
 
     pub fn edit(&self, name: &str) -> Result<()> {
@@ -157,6 +160,7 @@ impl SessionManager {
             return Ok(());
         }
 
+        // TODO: lot's of stuff refactor this
         let running_sessions =
             Session::list_sessions().wrap_err("failed to get running sessions")?;
         let running_sessions = running_sessions
@@ -185,13 +189,14 @@ impl SessionManager {
         self.manifest.contains(name)
     }
 
-    pub fn remove(&mut self, name: &str) -> Result<()> {
+    pub fn remove(self, name: &str) -> Result<Self> {
         let entry = self.entry(name)?;
         self.script_mgr.remove(entry)?;
-        self.manifest
-            .remove(name)
+        let manifest = self
+            .manifest
+            .filter_out(name)
             .wrap_err("failed to remove session")?;
-        Ok(())
+        Ok(Self { manifest, ..self })
     }
 
     pub fn list(&self, options: ListSessionsOptions) -> Result<()> {

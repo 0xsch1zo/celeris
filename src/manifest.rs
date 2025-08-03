@@ -1,31 +1,30 @@
+mod core;
+
 use crate::directory_manager::{self, DirectoryManager};
-use crate::utils;
-use serde::de::DeserializeOwned;
-use serde::{Deserialize, Serialize};
+use delegate::delegate;
+use ref_cast::RefCast;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde_with::{DeserializeAs, SerializeAs, serde_as};
 use std::error;
 use std::fmt::Display;
 use std::fs;
 use std::io;
-use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 #[derive(Debug)]
 pub enum Error {
-    NotFound(String),
-    AlreadyExists(String),
+    CoreError(Box<dyn error::Error + Send + Sync + 'static>),
     CoreDirectoryErr(directory_manager::Error),
     FSOperationFaiure(String, io::Error), // break down to pieces
     SerializeFailure(toml::ser::Error),
     DeserializeFailure(toml::de::Error),
-    DeductionFilenameErr(Box<dyn error::Error + Send + Sync>),
 }
 
 impl Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let message = match self {
-            Self::NotFound(entry) => format!("manifest entry not found: {entry}"),
-            Self::AlreadyExists(entry) => format!("manifest entry already exists: {entry}"),
+            Self::CoreError(_) => "error in manifest core".to_owned(),
             Self::CoreDirectoryErr(_) => {
                 "an error occured while operating on a directory core to the manifest".to_owned()
             }
@@ -34,9 +33,6 @@ impl Display for Error {
             }
             Self::SerializeFailure(_) => "failed to serialize the manifest".to_owned(),
             Self::DeserializeFailure(_) => "failed to deserialize the manifest".to_owned(),
-            Self::DeductionFilenameErr(_) => {
-                "failed to get a file name while deducing the name of a session".to_owned()
-            }
         };
         write!(f, "{message}")
     }
@@ -49,8 +45,7 @@ impl error::Error for Error {
             Self::SerializeFailure(e) => Some(e),
             Self::DeserializeFailure(e) => Some(e),
             Self::CoreDirectoryErr(e) => Some(e),
-            Self::DeductionFilenameErr(e) => Some(&**e),
-            _ => None,
+            Self::CoreError(e) => Some(&**e),
         }
     }
 }
@@ -73,77 +68,96 @@ impl From<directory_manager::Error> for Error {
     }
 }
 
-trait Codec<T: DeserializeOwned + Serialize> {
-    fn serialize_to_file(&self, object: &T, path: &Path) -> Result<(), Error>;
-    fn deserialize_from_file(&self, path: &Path) -> Result<T, Error>;
-}
-
-struct TomlCodec {}
-
-impl<T: DeserializeOwned + Serialize> Codec<T> for TomlCodec {
-    fn serialize_to_file(&self, object: &T, path: &Path) -> Result<(), Error> {
-        let object_str = toml::to_string(object)?;
-        fs::write(&path, object_str).map_err(|e| {
-            Error::FSOperationFaiure("failed to write to manifest file".to_owned(), e)
-        })?;
-        Ok(())
-    }
-
-    fn deserialize_from_file(&self, path: &Path) -> Result<T, Error> {
-        let object_str = fs::read_to_string(path)
-            .map_err(|e| Error::FSOperationFaiure("couldn't read manifest file".to_owned(), e))?;
-        Ok(toml::from_str(&object_str)?)
+impl From<core::Error> for Error {
+    fn from(value: core::Error) -> Self {
+        Error::CoreError(Box::new(value))
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, RefCast)]
+#[repr(transparent)]
 pub struct Entry {
-    name: String,
-    session_path: PathBuf,
-    script_name: String,
+    core: core::Entry,
+}
+
+impl Entry {
+    delegate! {
+        to self.core {
+            pub fn name(&self) -> &str;
+            pub fn session_path(&self) -> &Path;
+            pub fn script_name(&self) -> &str;
+        }
+    }
 }
 
 impl PartialEq for Entry {
     fn eq(&self, other: &Self) -> bool {
-        self.name == other.name
-            || self.script_name == other.script_name
-            || self.session_path == other.session_path
+        self.core == other.core
     }
 }
 
 impl Entry {
     pub fn new(name: String, session_path: PathBuf) -> Self {
-        const DELIMETER: &str = "_";
-        let script_name = name.replace("/", DELIMETER);
         Self {
-            name,
-            script_name,
-            session_path,
+            core: core::Entry::new(name, session_path),
         }
     }
+}
 
-    pub fn name(&self) -> &str {
-        &self.name
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(remote = "core::Entry")]
+struct EntryCoreDef {
+    name: String,
+    session_path: PathBuf,
+    script_name: String,
+}
+
+impl SerializeAs<core::Entry> for EntryCoreDef {
+    fn serialize_as<S>(value: &core::Entry, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        EntryCoreDef::serialize(value, serializer)
     }
+}
 
-    pub fn session_path(&self) -> &Path {
-        self.session_path.as_path()
+impl<'de> DeserializeAs<'de, core::Entry> for EntryCoreDef {
+    fn deserialize_as<D>(deserializer: D) -> Result<core::Entry, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        EntryCoreDef::deserialize(deserializer)
     }
+}
 
-    pub fn script_name(&self) -> &str {
-        &self.script_name
+#[serde_as]
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(remote = "core::Manifest")]
+struct ManifestCoreDef {
+    #[serde_as(as = "Vec<EntryCoreDef>")]
+    entries: Vec<core::Entry>,
+}
+
+#[derive(Debug, Default, Serialize, Deserialize)]
+#[serde(transparent)]
+struct ManifestCore(#[serde(with = "ManifestCoreDef")] core::Manifest);
+
+impl ManifestCore {
+    delegate! {
+        to self.0 {
+            fn deduce_name(&self, path: &Path) -> Result<String, core::Error>;
+            fn entry(&self, name: &str) -> Option<&core::Entry>;
+            fn contains(&self, name: &str) -> bool;
+            fn list(&self) -> Vec<&String>;
+            fn extend(self, entry: core::Entry) -> Result<core::Manifest, core::Error>;
+            fn filter_out(self, name: &str) -> Result<core::Manifest, core::Error>;
+        }
     }
 }
 
 pub struct Manifest {
-    fields: ManifestFields,
-    fields_codec: Box<dyn Codec<ManifestFields>>,
+    core: ManifestCore,
     dir_mgr: Rc<DirectoryManager>,
-}
-
-#[derive(Serialize, Deserialize)]
-struct ManifestFields {
-    entries: Vec<Entry>,
 }
 
 impl Manifest {
@@ -154,231 +168,61 @@ impl Manifest {
 
     fn serialize(&self) -> Result<(), Error> {
         let path = Self::path(&self.dir_mgr)?;
-        self.fields_codec.serialize_to_file(&self.fields, &path)
+        fs::write(&path, toml::to_string(&self.core)?).map_err(|e| {
+            Error::FSOperationFaiure("failed to write to manifest file".to_owned(), e)
+        })?;
+        Ok(())
     }
 
-    fn deserialize(
-        codec: Box<dyn Codec<ManifestFields>>,
-        dir_mgr: &DirectoryManager,
-    ) -> Result<ManifestFields, Error> {
+    fn deserialize(dir_mgr: &DirectoryManager) -> Result<ManifestCore, Error> {
         let path = Self::path(dir_mgr)?;
-        codec.deserialize_from_file(&path)
+        let manifest_str = fs::read_to_string(path)
+            .map_err(|e| Error::FSOperationFaiure("couldn't read manifest file".to_owned(), e))?;
+
+        Ok(toml::from_str(&manifest_str)?)
     }
 
     pub fn new(dir_mgr: Rc<DirectoryManager>) -> Result<Self, Error> {
         let path = Self::path(&dir_mgr)?;
-        if path.exists() {
-            Ok(Self {
-                fields: Self::deserialize(Box::new(TomlCodec {}), &dir_mgr)?,
-                fields_codec: Box::new(TomlCodec {}),
-                dir_mgr,
-            })
-        } else {
-            Ok(Manifest {
-                fields: ManifestFields {
-                    entries: Vec::new(),
-                },
-                fields_codec: Box::new(TomlCodec {}),
-                dir_mgr,
-            })
+        let core = match path.exists() {
+            true => Self::deserialize(&dir_mgr)?,
+            false => ManifestCore::default(),
+        };
+        Ok(Self { core, dir_mgr })
+    }
+
+    // delegate the pure ones that don't ned conversion
+    delegate! {
+        to self.core {
+            pub fn contains(&self, name: &str) -> bool;
+            pub fn list(&self) -> Vec<&String>;
         }
     }
 
     pub fn deduce_name(&self, path: &Path) -> Result<String, Error> {
-        if self.fields.entries.iter().any(|e| e.session_path == path) {
-            return Err(Error::AlreadyExists(path.to_string_lossy().to_string()));
-        }
-
-        let mut name = utils::file_name(path).map_err(|e| Error::DeductionFilenameErr(e.into()))?;
-        let ancestors = path.ancestors().collect::<Vec<_>>();
-        let ancestors = ancestors
-            .iter()
-            .skip(1) // skip the original directory
-            .enumerate()
-            .take_while(|(i, _)| *i < ancestors.len() - 2) // acount for skip
-            .map(|(_, a)| a)
-            .map(|a| utils::file_name(a).map_err(|e| Error::DeductionFilenameErr(e.into())))
-            .collect::<Result<Vec<_>, _>>()?;
-
-        let _ = ancestors.into_iter().try_for_each(|a| {
-            if self.contains(&name) {
-                name = format!("{}/{}", a, name);
-                ControlFlow::Continue(())
-            } else {
-                ControlFlow::Break(())
-            }
-        });
-
-        if self.contains(&name) {
-            return Err(Error::AlreadyExists(name));
-        }
-
+        let name = self.core.deduce_name(path)?;
         Ok(name)
     }
 
-    pub fn push(&mut self, entry: Entry) -> Result<(), Error> {
-        if self.fields.entries.contains(&entry) {
-            return Err(Error::AlreadyExists(entry.name));
-        }
-
-        self.fields.entries.push(entry);
-        Self::serialize(self)?;
-        Ok(())
-    }
-
-    pub fn entry(&self, name: &str) -> Option<&Entry> {
-        self.fields.entries.iter().find(|entry| entry.name == name)
-    }
-
-    pub fn contains(&self, name: &str) -> bool {
-        self.fields
-            .entries
-            .iter()
-            .find(|s| s.name == name)
-            .is_some()
-    }
-
-    pub fn remove(&mut self, name: &str) -> Result<(), Error> {
-        self.fields.entries.remove(
-            self.fields
-                .entries
-                .iter()
-                .position(|e| e.name == name)
-                .ok_or(Error::NotFound(name.to_owned()))?,
-        );
-
-        Self::serialize(self)?;
-        Ok(())
-    }
-
-    pub fn list(&self) -> Vec<&String> {
-        self.fields
-            .entries
-            .iter()
-            .map(|e| &e.name)
-            .collect::<Vec<_>>()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use color_eyre::Result;
-
-    struct MockCodec {}
-
-    impl Codec<ManifestFields> for MockCodec {
-        fn serialize_to_file(
-            &self,
-            _object: &ManifestFields,
-            _path: &Path,
-        ) -> std::result::Result<(), Error> {
-            Ok(())
-        }
-
-        fn deserialize_from_file(
-            &self,
-            _path: &Path,
-        ) -> std::result::Result<ManifestFields, Error> {
-            Ok(ManifestFields {
-                entries: Vec::new(),
-            })
-        }
-    }
-
-    fn test_entry(name: &str) -> Result<Entry> {
-        Ok(Entry::new(name.to_owned(), PathBuf::new()))
-    }
-
-    fn manifest_with_names(names: Vec<&'static str>) -> Result<Manifest> {
-        let entries = names
-            .into_iter()
-            .map(|name| test_entry(name))
-            .collect::<Result<Vec<_>>>()?;
+    pub fn extend(self, entry: Entry) -> Result<Manifest, Error> {
         let manifest = Manifest {
-            fields: ManifestFields { entries: entries },
-            fields_codec: Box::new(MockCodec {}),
-            dir_mgr: DirectoryManager::new().into(),
+            core: ManifestCore(self.core.extend(entry.core)?),
+            ..self
         };
+        manifest.serialize()?;
         Ok(manifest)
     }
 
-    #[test]
-    fn entry() -> Result<()> {
-        let manifest = manifest_with_names(vec!["test"])?;
-        let entry = manifest.entry("test");
-        assert_eq!(entry, Some(&test_entry("test")?));
-        Ok(())
+    pub fn entry(&self, name: &str) -> Option<&Entry> {
+        self.core.entry(name).map(Entry::ref_cast)
     }
 
-    #[test]
-    fn contains() -> Result<()> {
-        let manifest = manifest_with_names(vec!["test1", "test2"])?;
-        assert_eq!(manifest.contains("test1"), true);
-        assert_eq!(manifest.contains("test2"), true);
-        Ok(())
-    }
-
-    #[test]
-    fn remove() -> Result<()> {
-        let mut manifest = manifest_with_names(vec!["test"])?;
-        manifest.remove("test")?;
-        assert_eq!(manifest.contains("test"), false);
-        Ok(())
-    }
-
-    mod push {
-        use super::*;
-
-        #[test]
-        fn normal() -> Result<()> {
-            let mut manifest = manifest_with_names(Vec::new())?;
-            manifest.push(test_entry("test")?)?;
-            assert_eq!(manifest.contains("test"), true);
-            Ok(())
-        }
-
-        #[test]
-        fn duplicate() -> Result<()> {
-            let mut manifest = manifest_with_names(vec!["test"])?;
-            let result = manifest.push(test_entry("test")?);
-            assert_eq!(result.is_err(), true);
-            Ok(())
-        }
-    }
-
-    mod deduce_name {
-        use super::*;
-
-        #[test]
-        fn normal() -> Result<()> {
-            let manifest = manifest_with_names(Vec::new())?;
-            let name = manifest.deduce_name(Path::new("/test/test"))?;
-            assert_eq!(name, "test");
-            Ok(())
-        }
-
-        #[test]
-        fn simple_duplicate() -> Result<()> {
-            let manifest = manifest_with_names(vec!["test"])?;
-            let name = manifest.deduce_name(Path::new("/test/test"))?;
-            assert_eq!(name, "test/test");
-            Ok(())
-        }
-
-        #[test]
-        fn undeducable_duplicate() -> Result<()> {
-            let manifest = manifest_with_names(vec!["test"])?;
-            let _ = manifest.deduce_name(Path::new("/test")).unwrap_err();
-            Ok(())
-        }
-
-        #[test]
-        fn multiple() -> Result<()> {
-            let manifest = manifest_with_names(vec!["test", "test/test"])?;
-            let name = manifest.deduce_name(Path::new("/test/test/test"))?;
-            assert_eq!(name, "test/test/test");
-            Ok(())
-        }
+    pub fn filter_out(self, name: &str) -> Result<Self, Error> {
+        let manifest = Manifest {
+            core: ManifestCore(self.core.filter_out(name)?),
+            ..self
+        };
+        manifest.serialize()?;
+        Ok(manifest)
     }
 }
