@@ -3,6 +3,7 @@ use color_eyre::Result;
 use sesh::cli::{Cli, Commands};
 use sesh::config::Config;
 use sesh::directory_manager::DirectoryManager;
+use sesh::layout::{Layout, LayoutManager};
 use sesh::repo_search;
 use sesh::session_manager::{SessionManager, SessionProperties};
 use std::io::{self, Write};
@@ -23,6 +24,8 @@ fn main() -> Result<()> {
         dir_mgr.set_cache_dir(cache_dir)?;
     }
 
+    let layout_mgr = LayoutManager::new(dir_mgr.layouts_dir()?)?;
+    return Ok(());
     let config = Rc::new(Config::new(&dir_mgr)?);
     let session_manager = SessionManager::new(Rc::clone(&config), Rc::new(dir_mgr))?;
 

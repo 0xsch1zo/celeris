@@ -90,15 +90,15 @@ impl DirectoryManager {
         Ok(path)
     }
 
-    pub fn scripts_path(&self) -> Result<PathBuf, Error> {
-        const SCRIPTS_DIR: &'static str = "scripts";
-        let scripts_path = self.config_dir()?.join(SCRIPTS_DIR);
-        if !scripts_path.exists() {
-            fs::create_dir(&scripts_path).map_err(|e| {
+    pub fn layouts_dir(&self) -> Result<PathBuf, Error> {
+        const LAYOUTS_DIR: &'static str = "layouts";
+        let layouts_dir = self.config_dir()?.join(LAYOUTS_DIR);
+        if !layouts_dir.exists() {
+            fs::create_dir(&layouts_dir).map_err(|e| {
                 Error::FSOperationFailed("failed to create scripts dir".to_owned(), e)
             })?
         }
-        Ok(scripts_path)
+        Ok(layouts_dir)
     }
 
     pub fn cache_dir(&self) -> Result<PathBuf, Error> {

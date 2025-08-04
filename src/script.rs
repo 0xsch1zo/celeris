@@ -37,7 +37,7 @@ impl ScriptManager {
     fn script_path(&self, entry: &manifest::Entry) -> Result<PathBuf> {
         Ok(self
             .dir_mgr
-            .scripts_path()?
+            .layouts_dir()?
             .join(entry.script_name())
             .with_extension("rhai"))
     }
