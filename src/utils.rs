@@ -5,10 +5,19 @@ use std::path::{Path, PathBuf};
 pub fn file_name(path: &Path) -> Result<String> {
     Ok(path
         .file_name()
-        .ok_or_eyre(format!("invalid path format {path:?}"))?
+        .ok_or_eyre(format!("{path:?} has no filename"))?
         .to_str()
         .ok_or_eyre(format!("invalid utf08 encoding path: {path:?}"))?
-        .to_string())
+        .to_owned())
+}
+
+pub fn file_stem(path: &Path) -> Result<String> {
+    Ok(path
+        .file_stem()
+        .ok_or_eyre(format!("{path:?} has no file stem"))?
+        .to_str()
+        .ok_or_eyre(format!("invalid utf08 encoding path: {path:?}"))?
+        .to_owned())
 }
 
 pub fn path_to_string(path: &Path) -> Result<String> {

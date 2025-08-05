@@ -1,6 +1,7 @@
 mod core;
 
 use clap::builder::OsStr;
+use core::ExtractLayoutsIterator;
 use delegate::delegate;
 use itertools::Itertools;
 use ref_cast::RefCast;
@@ -125,28 +126,16 @@ impl LayoutManager {
 
         Ok(paths
             .into_iter()
-            .filter(|path| path.is_file())
-            .filter(|path| path.extension() == Some(&OsStr::from("rhai")))
             .map(|path| {
-                Ok(path
-                    .file_stem()
-                    .unwrap()
-                    .to_str()
-                    .ok_or(Error::InvalidFilename)?
-                    .to_owned())
+                let is_file = path.is_file();
+                core::LayoutInfo::new(path, is_file)
             })
-            .map(|filename: Result<_, Error>| Ok(LayoutName::try_from_storage_name(filename?)?))
-            .map(
-                |layout_name: Result<_, Error>| -> Result<core::Layout, Error> {
-                    Ok(core::Layout::new(layout_name?.core))
-                },
-            )
+            .extract_layouts()
             .try_collect()?)
     }
 
     pub fn new(layouts_dir: PathBuf) -> Result<Self, Error> {
         let layouts = Self::enumerate_layouts(&layouts_dir)?;
-        layouts.iter().for_each(|l| println!("{}", l.tmux_name()));
         let core = core::LayoutManager::new(layouts);
         Ok(Self { core, layouts_dir })
     }

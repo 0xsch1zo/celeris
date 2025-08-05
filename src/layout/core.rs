@@ -54,9 +54,7 @@ impl LayoutName {
                 "name contains characters that tmux treats specially".to_owned(),
             ));
         }
-
-        let sanitized = sanitize_filename::sanitize(name);
-        Ok(Self(sanitized))
+        Ok(Self(name))
     }
 
     pub fn try_from_path(path: &Path, layout_manager: &LayoutManager) -> Result<Self, Error> {
@@ -87,7 +85,9 @@ impl LayoutName {
     }
 
     pub fn try_from_storage_name(storage_name: String) -> Result<Self, Error> {
+        println!("{storage_name}");
         let name = storage_name.replace(Self::STORAGE_NAME_DELIMETER, Self::TMUX_NAME_DELIMETER);
+        println!("{name}");
         Self::try_new(name)
     }
 
@@ -96,8 +96,10 @@ impl LayoutName {
     }
 
     fn storage_name(&self) -> String {
-        self.0
-            .replace(Self::TMUX_NAME_DELIMETER, Self::STORAGE_NAME_DELIMETER)
+        let storage_name = self
+            .0
+            .replace(Self::TMUX_NAME_DELIMETER, Self::STORAGE_NAME_DELIMETER);
+        sanitize_filename::sanitize(storage_name)
     }
 }
 
@@ -139,6 +141,55 @@ impl Layout {
         "rhai".into()
     }
 }
+
+pub struct LayoutInfo {
+    path: PathBuf,
+    is_file: bool,
+}
+
+impl LayoutInfo {
+    pub fn new(path: PathBuf, is_file: bool) -> Self {
+        Self { path, is_file }
+    }
+}
+
+pub struct ExtractLayouts<'a> {
+    iter: Box<dyn Iterator<Item = Result<Layout, Error>> + 'a>,
+}
+
+impl<'a> ExtractLayouts<'a> {
+    pub fn new<I>(iter: I) -> Self
+    where
+        I: Iterator<Item = LayoutInfo> + 'a,
+    {
+        let iter = iter
+            .filter(|info| info.is_file.clone())
+            .filter(|info| info.path.extension() == Some(&OsStr::from(Layout::extension())))
+            .map(|info| {
+                Ok(utils::file_stem(&info.path).map_err(|e| Error::InvalidFilename(e.into()))?)
+            })
+            .map(|filename| Ok(LayoutName::try_from_storage_name(filename?)?))
+            .map(|layout_name| Ok(Layout::new(layout_name?)));
+        Self {
+            iter: Box::new(iter),
+        }
+    }
+}
+
+impl Iterator for ExtractLayouts<'_> {
+    type Item = Result<Layout, Error>;
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter.next()
+    }
+}
+
+pub trait ExtractLayoutsIterator<'a>: Iterator<Item = LayoutInfo> + Sized + 'a {
+    fn extract_layouts(self) -> ExtractLayouts<'a> {
+        ExtractLayouts::new(self)
+    }
+}
+
+impl<'a, I: Iterator<Item = LayoutInfo> + 'a> ExtractLayoutsIterator<'a> for I {}
 
 #[derive(Debug)]
 pub struct LayoutManager {

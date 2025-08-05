@@ -17,6 +17,7 @@ clap = { version = "4.5.40", features = ["derive", "env"] }
 serde_with = "3.14.0"
 delegate = "0.13.4"
 ref-cast = "1.0.24"
+sanitize-filename = "0.6.0"
 
 [dev-dependencies]
 test-with = "0.15.2"
