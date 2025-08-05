@@ -41,6 +41,7 @@ impl std::error::Error for Error {
     }
 }
 
+#[derive(Debug)]
 pub struct LayoutName(String);
 
 impl LayoutName {
@@ -91,7 +92,7 @@ impl LayoutName {
         Self::try_new(name)
     }
 
-    fn name(&self) -> &str {
+    fn tmux_name(&self) -> &str {
         &self.0
     }
 
@@ -118,7 +119,7 @@ impl PartialEq for Layout {
 impl Layout {
     pub fn new(layout_name: LayoutName) -> Self {
         Self {
-            tmux_name: layout_name.name().to_owned(),
+            tmux_name: layout_name.tmux_name().to_owned(),
             storage_name: layout_name.storage_name(),
         }
     }
@@ -202,7 +203,7 @@ impl LayoutManager {
     }
 
     pub fn layout(&self, name: &str) -> Option<&Layout> {
-        self.layouts.iter().find(|entry| entry.tmux_name == name)
+        self.layouts.iter().find(|layout| layout.tmux_name == name)
     }
 
     pub fn contains(&self, name: &str) -> bool {
@@ -230,5 +231,101 @@ impl LayoutManager {
         }
         self.layouts.retain(|l| l.tmux_name != name);
         Ok(())
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use color_eyre::Result;
+
+    fn test_layout(name: &str) -> Result<Layout> {
+        Ok(Layout::new(LayoutName::try_new(name.to_owned())?))
+    }
+
+    fn layout_manager_with_names(names: Vec<&'static str>) -> Result<LayoutManager> {
+        let layouts = names
+            .into_iter()
+            .map(|name| test_layout(name))
+            .collect::<Result<Vec<_>>>()?;
+        Ok(LayoutManager::new(layouts))
+    }
+
+    #[test]
+    fn layout() -> Result<()> {
+        let layout_manager = layout_manager_with_names(vec!["test"])?;
+        let layout = layout_manager.layout("test");
+        assert_eq!(layout, Some(&test_layout("test")?));
+        Ok(())
+    }
+
+    #[test]
+    fn contains() -> Result<()> {
+        let layout_manager = layout_manager_with_names(vec!["test1", "test2"])?;
+        assert_eq!(layout_manager.contains("test1"), true);
+        assert_eq!(layout_manager.contains("test2"), true);
+        Ok(())
+    }
+
+    #[test]
+    fn remove() -> Result<()> {
+        let mut layout_manager = layout_manager_with_names(vec!["test"])?;
+        layout_manager.remove("test")?;
+        assert_eq!(layout_manager.contains("test"), false);
+        Ok(())
+    }
+
+    mod cra {
+        use super::*;
+
+        #[test]
+        fn normal() -> Result<()> {
+            let mut layout_manager = layout_manager_with_names(Vec::new())?;
+            layout_manager.create(test_layout("test")?)?;
+            assert_eq!(layout_manager.contains("test"), true);
+            Ok(())
+        }
+
+        #[test]
+        fn duplicate() -> Result<()> {
+            let mut layout_manager = layout_manager_with_names(vec!["test"])?;
+            let result = layout_manager.create(test_layout("test")?);
+            assert_eq!(result.is_err(), true);
+            Ok(())
+        }
+    }
+
+    mod deduce_name {
+        use super::*;
+
+        #[test]
+        fn normal() -> Result<()> {
+            let layout_manager = layout_manager_with_names(Vec::new())?;
+            let name = LayoutName::try_from_path(Path::new("/test/test"), &layout_manager)?;
+            assert_eq!(name.tmux_name(), "test");
+            Ok(())
+        }
+
+        #[test]
+        fn simple_duplicate() -> Result<()> {
+            let layout_manager = layout_manager_with_names(vec!["test"])?;
+            let name = LayoutName::try_from_path(Path::new("/test/test"), &layout_manager)?;
+            assert_eq!(name.tmux_name(), "test/test");
+            Ok(())
+        }
+
+        #[test]
+        fn undeducable_duplicate() -> Result<()> {
+            let layout_manager = layout_manager_with_names(vec!["test"])?;
+            let _ = LayoutName::try_from_path(Path::new("/test"), &layout_manager).unwrap_err();
+            Ok(())
+        }
+
+        #[test]
+        fn multiple() -> Result<()> {
+            let layout_manager = layout_manager_with_names(vec!["test", "test/test"])?;
+            let name = LayoutName::try_from_path(Path::new("/test/test/test"), &layout_manager)?;
+            assert_eq!(name.tmux_name(), "test/test/test");
+            Ok(())
+        }
     }
 }
