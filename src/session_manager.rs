@@ -1,8 +1,9 @@
 use crate::config::Config;
 use crate::directory_manager::DirectoryManager;
-use crate::manifest;
-use crate::manifest::Manifest;
-use crate::script::ScriptManager;
+use crate::layout::Layout;
+use crate::layout::LayoutManager;
+use crate::layout::LayoutName;
+use crate::script;
 use crate::tmux::Session;
 use crate::utils;
 use color_eyre::Result;
@@ -13,8 +14,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::rc::Rc;
 
-// TODO: make project mamagner which encompasses manifest and script manager
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum Name {
     Deduced,
     Custom(String),
@@ -27,26 +27,22 @@ pub struct SessionProperties {
 }
 
 impl SessionProperties {
-    pub fn new(name: Name, path: PathBuf) -> Self {
-        Self { name, path }
-    }
-
-    pub fn from(name: Option<String>, path: PathBuf) -> Self {
+    pub fn try_from(name: Option<String>, path: PathBuf) -> Result<Self> {
         let name = match name {
             Some(name) => Name::Custom(name),
             None => Name::Deduced,
         };
-        Self { name, path }
+        let path = utils::expand_path(path)?;
+        Ok(Self { name, path })
     }
 
-    fn name(&self, manifest: &Manifest) -> Result<String> {
-        Ok(match &self.name {
-            Name::Custom(name) => name.to_owned(),
-            Name::Deduced => manifest.deduce_name(&self.path).wrap_err(format!(
-                "failed to deduce name of session with path: {}",
-                self.path.display()
-            ))?,
-        })
+    fn try_into_layout(self, layout_mgr: &LayoutManager) -> Result<Layout> {
+        let layout_name = match self.name {
+            Name::Deduced => LayoutName::try_from_path(&self.path, &layout_mgr),
+            Name::Custom(name) => LayoutName::try_new(name),
+        }
+        .wrap_err("failed to create layout name")?;
+        Ok(Layout::new(layout_name))
     }
 }
 
@@ -85,10 +81,10 @@ pub enum SwitchTarget {
 pub use list_sessions::Options as ListSessionsOptions;
 
 pub struct SessionManager {
-    manifest: Manifest,
+    layout_mgr: LayoutManager,
     config: Rc<Config>,
     last_session_mgr: LastSessionManger,
-    script_mgr: ScriptManager,
+    dir_mgr: Rc<DirectoryManager>,
 }
 
 // TODO: the program can be in a weird state when it it errors out during an action that get's
@@ -96,42 +92,36 @@ pub struct SessionManager {
 impl SessionManager {
     pub fn new(config: Rc<Config>, dir_mgr: Rc<DirectoryManager>) -> Result<Self> {
         Ok(Self {
-            manifest: Manifest::new(Rc::clone(&dir_mgr))?,
             config,
+            layout_mgr: LayoutManager::new(dir_mgr.layouts_dir()?)?,
             last_session_mgr: LastSessionManger::new(Rc::clone(&dir_mgr)),
-            script_mgr: ScriptManager::new(dir_mgr),
+            dir_mgr: dir_mgr,
         })
     }
 
-    fn entry(&self, name: &str) -> Result<&manifest::Entry> {
+    fn layout(&self, name: &str) -> Result<&Layout> {
         Ok(self
-            .manifest
-            .entry(&name)
+            .layout_mgr
+            .layout(&name)
             .ok_or_eyre(format!("session not found: {}", name))?)
     }
 
-    pub fn create(self, mut props: SessionProperties) -> Result<Self> {
-        // lot's of stuff, refactor this
-        props.path = utils::expand_path(props.path)?;
-        let name = props.name(&self.manifest)?;
-        let entry = manifest::Entry::new(name.clone(), props.path);
-        let manifest = self
-            .manifest
-            .extend(entry)
-            .wrap_err("failed to add session")?;
-        let session_mgr = Self { manifest, ..self };
-        let entry = session_mgr.entry(&name)?; // only ref
-        session_mgr.script_mgr.create(entry).wrap_err(format!(
-            "failed to create script for session with name: {}",
-            name
-        ))?;
-        session_mgr.script_mgr.edit(entry, &session_mgr.config)?;
-        Ok(session_mgr)
+    pub fn create(&mut self, props: SessionProperties) -> Result<()> {
+        let name = props.name.clone();
+        let layout = props
+            .try_into_layout(&self.layout_mgr)
+            .wrap_err(format!("failed to create layout with name: {name:?}"))?;
+        let name = layout.tmux_name().to_owned();
+        self.layout_mgr
+            .create(layout)
+            .wrap_err("failed to create layout file")?;
+        self.layout_mgr.edit(&name, &self.config)?;
+        // TODO: print the name of the sesssion created
+        Ok(())
     }
 
-    pub fn edit(&self, name: &str) -> Result<()> {
-        let entry = self.entry(name)?;
-        self.script_mgr.edit(entry, &self.config)?;
+    pub fn edit(&self, tmux_name: &str) -> Result<()> {
+        self.layout_mgr.edit(tmux_name, &self.config)?;
         Ok(())
     }
 
@@ -152,10 +142,10 @@ impl SessionManager {
         Ok(())
     }
 
-    fn switch_core(&self, name: &str) -> Result<()> {
-        let name = name.to_owned();
+    fn switch_core(&self, tmux_name: &str) -> Result<()> {
+        let tmux_name = tmux_name.to_owned();
         let active_session = Session::active_name().wrap_err("failed to get active sesion")?;
-        if Some(&name) == active_session.as_ref() {
+        if Some(&tmux_name) == active_session.as_ref() {
             println!("info: session with that name is already attached. Aborting switch");
             return Ok(());
         }
@@ -168,39 +158,33 @@ impl SessionManager {
             .filter(|s| Some(s) != active_session.as_ref())
             .collect_vec();
         self.last_session_mgr
-            .save(&name)
+            .save(&tmux_name)
             .wrap_err("failed to save session name for later use")?;
-        if running_sessions.contains(&name) {
-            let session = Session::from(&name)?;
+        if running_sessions.contains(&tmux_name) {
+            let session = Session::from(&tmux_name)?;
             session.attach()?;
         } else {
-            self.run(&name)?;
+            self.run(&tmux_name)?;
         }
         Ok(())
     }
 
-    fn run(&self, name: &str) -> Result<()> {
-        let entry = self.entry(name)?;
-        self.script_mgr.run(entry).wrap_err("script error")?;
+    fn run(&self, tmux_name: &str) -> Result<()> {
+        let layout = self.layout(tmux_name)?;
+        script::run(layout, &self.dir_mgr.layouts_dir()?)
+            .wrap_err("an error occured while exucting the layout file: {tmux_name}")?;
         Ok(())
     }
 
-    pub fn exists(&self, name: &str) -> bool {
-        self.manifest.contains(name)
-    }
-
-    pub fn remove(self, name: &str) -> Result<Self> {
-        let entry = self.entry(name)?;
-        self.script_mgr.remove(entry)?;
-        let manifest = self
-            .manifest
-            .filter_out(name)
-            .wrap_err("failed to remove session")?;
-        Ok(Self { manifest, ..self })
+    pub fn remove(self, tmux_name: &str) -> Result<()> {
+        self.layout_mgr
+            .remove(tmux_name)
+            .wrap_err("failed to remove layout with name: {tmux_name}")?;
+        Ok(())
     }
 
     pub fn list(&self, options: ListSessionsOptions) -> Result<()> {
-        list_sessions::run(&self.manifest, options)?;
+        list_sessions::run(&self.layout_mgr, options)?;
         Ok(())
     }
 }
@@ -208,7 +192,7 @@ impl SessionManager {
 mod list_sessions {
     use std::io::{self, Write};
 
-    use crate::manifest::Manifest;
+    use crate::layout::LayoutManager;
     use crate::tmux::Session;
     use color_eyre::Result;
     use color_eyre::eyre::Context;
@@ -236,10 +220,10 @@ mod list_sessions {
     }
 
     // TODO: make a good interface for the functionality
-    pub fn run(manifest: &Manifest, opts: Options) -> Result<()> {
-        let manifest_sessions = manifest.list().into_iter().map(ToOwned::to_owned);
+    pub fn run(layout_mgr: &LayoutManager, opts: Options) -> Result<()> {
+        let layouts = layout_mgr.list().into_iter().map(ToOwned::to_owned);
         let running_sessions = Session::list_sessions()?;
-        let sessions = manifest_sessions.chain(running_sessions.clone().into_iter());
+        let sessions = layouts.chain(running_sessions.clone().into_iter());
         let active_session = Session::active_name()?;
 
         let exclude_info = ExcludeInfo::new(running_sessions, active_session.clone());

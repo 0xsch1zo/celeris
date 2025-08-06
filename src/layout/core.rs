@@ -86,9 +86,7 @@ impl LayoutName {
     }
 
     pub fn try_from_storage_name(storage_name: String) -> Result<Self, Error> {
-        println!("{storage_name}");
         let name = storage_name.replace(Self::STORAGE_NAME_DELIMETER, Self::TMUX_NAME_DELIMETER);
-        println!("{name}");
         Self::try_new(name)
     }
 
@@ -202,12 +200,17 @@ impl LayoutManager {
         Self { layouts }
     }
 
-    pub fn layout(&self, name: &str) -> Option<&Layout> {
-        self.layouts.iter().find(|layout| layout.tmux_name == name)
+    pub fn layout(&self, tmux_name: &str) -> Option<&Layout> {
+        self.layouts
+            .iter()
+            .find(|layout| layout.tmux_name == tmux_name)
     }
 
-    pub fn contains(&self, name: &str) -> bool {
-        self.layouts.iter().find(|s| s.tmux_name == name).is_some()
+    pub fn contains(&self, tmux_name: &str) -> bool {
+        self.layouts
+            .iter()
+            .find(|s| s.tmux_name == tmux_name)
+            .is_some()
     }
 
     pub fn list(&self) -> Vec<&String> {
@@ -224,12 +227,12 @@ impl LayoutManager {
     }
 
     // impure
-    pub fn remove(&mut self, name: &str) -> Result<(), Error> {
-        let exists = self.layouts.iter().any(|e| e.tmux_name == name);
+    pub fn remove(&mut self, tmux_name: &str) -> Result<(), Error> {
+        let exists = self.layouts.iter().any(|e| e.tmux_name == tmux_name);
         if !exists {
-            return Err(Error::NotFound(name.to_owned()));
+            return Err(Error::NotFound(tmux_name.to_owned()));
         }
-        self.layouts.retain(|l| l.tmux_name != name);
+        self.layouts.retain(|l| l.tmux_name != tmux_name);
         Ok(())
     }
 }
@@ -274,7 +277,7 @@ mod tests {
         Ok(())
     }
 
-    mod cra {
+    mod create {
         use super::*;
 
         #[test]

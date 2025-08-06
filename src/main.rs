@@ -3,12 +3,12 @@ use color_eyre::Result;
 use sesh::cli::{Cli, Commands};
 use sesh::config::Config;
 use sesh::directory_manager::DirectoryManager;
-use sesh::layout::{Layout, LayoutManager};
 use sesh::repo_search;
 use sesh::session_manager::{SessionManager, SessionProperties};
 use std::io::{self, Write};
 use std::rc::Rc;
 
+// TODO: figure out if you can do some ast parsing on layout files to check if build was called
 fn main() -> Result<()> {
     color_eyre::config::HookBuilder::default()
         .display_env_section(false)
@@ -24,10 +24,8 @@ fn main() -> Result<()> {
         dir_mgr.set_cache_dir(cache_dir)?;
     }
 
-    let layout_mgr = LayoutManager::new(dir_mgr.layouts_dir()?)?;
-    return Ok(());
     let config = Rc::new(Config::new(&dir_mgr)?);
-    let session_manager = SessionManager::new(Rc::clone(&config), Rc::new(dir_mgr))?;
+    let mut session_manager = SessionManager::new(Rc::clone(&config), Rc::new(dir_mgr))?;
 
     match cli.command {
         Commands::FindRepos => {
@@ -35,14 +33,12 @@ fn main() -> Result<()> {
         }
         Commands::ListSessions { opts } => session_manager.list(opts.into())?,
         Commands::NewSession { name, path } => {
-            let props = SessionProperties::from(name, path);
+            let props = SessionProperties::try_from(name, path)?;
             session_manager.create(props)?;
         }
         Commands::EditSession { name } => session_manager.edit(&name)?,
         Commands::Switch { target } => session_manager.switch(target.into())?,
-        Commands::RemoveSession { name } => {
-            session_manager.remove(&name)?;
-        }
+        Commands::RemoveSession { name } => session_manager.remove(&name)?,
     }
     Ok(())
 }

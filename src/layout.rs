@@ -5,32 +5,45 @@ use core::ExtractLayoutsIterator;
 use delegate::delegate;
 use itertools::Itertools;
 use ref_cast::RefCast;
+use std::env::VarError;
+use std::ffi::OsString;
 use std::fmt::Display;
 use std::fs::File;
-use std::io;
 use std::path::{Path, PathBuf};
+use std::process::Command;
+use std::{env, io};
 use std::{error, fs};
 use walkdir::WalkDir;
+
+use crate::config::Config;
 
 #[derive(Debug)]
 pub enum Error {
     CoreError(Box<dyn error::Error + Send + Sync + 'static>),
     FSOperationFaiure(String, io::Error), // break down to pieces
+    FailedCommand(String, io::Error),
     InvalidDirEntry(Box<dyn error::Error + Send + Sync + 'static>),
-    InvalidFilename,
+    InvalidPath,
     NotFound(String),
+    EditorNotFound,
+    EditorInvalid(OsString),
 }
 
 impl Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let message = match self {
-            Self::CoreError(_) => "error in manifest core".to_owned(),
+            Self::CoreError(_) => "error in layout manager core".to_owned(),
             Self::FSOperationFaiure(desc, _) => {
-                format!("manifest file operation failed: {desc}")
+                format!("layout manager file operation failed: {desc}")
             }
             Self::InvalidDirEntry(_) => "invalid dir entry".to_owned(),
-            Self::InvalidFilename => "filename contains invalid utf-8".to_owned(),
+            Self::InvalidPath => "path contains invalid utf-8".to_owned(),
             Self::NotFound(layout) => format!("layout not found: {layout}"),
+            Self::FailedCommand(command, _) => format!("failed to execute command: {command}"),
+            Self::EditorNotFound => "$EDITOR is not set nor set in the config".to_owned(),
+            Self::EditorInvalid(invalid_text) => {
+                format!("$EDITOR contains invalid unicode: {invalid_text:?}")
+            }
         };
         write!(f, "{message}")
     }
@@ -42,6 +55,7 @@ impl error::Error for Error {
             Self::FSOperationFaiure(_, e) => Some(e),
             Self::CoreError(e) => Some(&**e),
             Self::InvalidDirEntry(e) => Some(&**e),
+            Self::FailedCommand(_, e) => Some(e),
             _ => None,
         }
     }
@@ -58,12 +72,12 @@ pub struct LayoutName {
 }
 
 impl LayoutName {
-    fn try_new(name: String) -> Result<Self, Error> {
-        let core = core::LayoutName::try_new(name)?;
+    pub fn try_new(tmux_name: String) -> Result<Self, Error> {
+        let core = core::LayoutName::try_new(tmux_name)?;
         Ok(Self { core })
     }
 
-    fn try_from_path(path: &Path, layout_manager: &LayoutManager) -> Result<Self, Error> {
+    pub fn try_from_path(path: &Path, layout_manager: &LayoutManager) -> Result<Self, Error> {
         let core = core::LayoutName::try_from_path(path, &layout_manager.core)?;
         Ok(Self { core })
     }
@@ -101,9 +115,9 @@ impl PartialEq for Layout {
 }
 
 impl Layout {
-    pub fn new(name: LayoutName) -> Self {
+    pub fn new(tmux_name: LayoutName) -> Self {
         Self {
-            core: core::Layout::new(name.core),
+            core: core::Layout::new(tmux_name.core),
         }
     }
 }
@@ -143,7 +157,7 @@ impl LayoutManager {
     // delegate the pure ones that don't ned conversion
     delegate! {
         to self.core {
-            pub fn contains(&self, name: &str) -> bool;
+            pub fn contains(&self, tmux_name: &str) -> bool;
             pub fn list(&self) -> Vec<&String>;
         }
     }
@@ -151,7 +165,10 @@ impl LayoutManager {
     pub fn create(&mut self, layout: Layout) -> Result<(), Error> {
         File::create_new(&layout.storage_path(&self.layouts_dir)).map_err(|e| {
             Error::FSOperationFaiure(
-                format!("failed to create layout with name: {}", layout.tmux_name()),
+                format!(
+                    "failed to create layout with tmux_name: {}",
+                    layout.tmux_name()
+                ),
                 e,
             )
         })?;
@@ -159,12 +176,14 @@ impl LayoutManager {
         Ok(())
     }
 
-    pub fn layout(&self, name: &str) -> Option<&Layout> {
-        self.core.layout(name).map(Layout::ref_cast)
+    pub fn layout(&self, tmux_name: &str) -> Option<&Layout> {
+        self.core.layout(tmux_name).map(Layout::ref_cast)
     }
 
-    pub fn remove(self, name: &str) -> Result<(), Error> {
-        let layout = self.layout(name).ok_or(Error::NotFound(name.to_owned()))?;
+    pub fn remove(self, tmux_name: &str) -> Result<(), Error> {
+        let layout = self
+            .layout(tmux_name)
+            .ok_or(Error::NotFound(tmux_name.to_owned()))?;
         fs::remove_file(layout.storage_path(&self.layouts_dir)).map_err(|e| {
             Error::FSOperationFaiure(
                 format!(
@@ -174,6 +193,26 @@ impl LayoutManager {
                 e,
             )
         })?;
+        Ok(())
+    }
+
+    pub fn edit(&self, tmux_name: &str, config: &Config) -> Result<(), Error> {
+        let editor = config
+            .editor
+            .clone()
+            .unwrap_or(env::var("EDITOR").map_err(|e| match e {
+                VarError::NotPresent => Error::EditorNotFound,
+                VarError::NotUnicode(invalid_text) => Error::EditorInvalid(invalid_text),
+            })?);
+
+        let layout = self
+            .layout(tmux_name)
+            .ok_or(Error::NotFound(tmux_name.to_owned()))?;
+        let layout_path = layout.storage_path(&self.layouts_dir);
+        Command::new(&editor)
+            .arg(layout_path)
+            .status()
+            .map_err(|e| Error::FailedCommand(editor, e))?;
         Ok(())
     }
 }
