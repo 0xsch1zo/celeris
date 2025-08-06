@@ -79,9 +79,9 @@ fn active_name() -> Result<()> {
 fn list_sessions() -> Result<()> {
     let session_name_1 = "__sesh_testing_1";
     let session_name_2 = "__sesh_testing_2";
-    let _session1 = Session::new(session_name_1, Root::Default)?; // to stop the session
+    let _session1 = SessionBuilder::new(session_name_1.to_owned()).build()?; // to stop the session
     // from being dropped
-    let _session2 = Session::new(session_name_2, Root::Default)?;
+    let _session2 = SessionBuilder::new(session_name_2.to_lowercase()).build()?;
     let sessions = Session::list_sessions()?;
     assert!(
         sessions
@@ -110,7 +110,9 @@ fn new_session() -> Result<()> {
 
 #[test]
 fn new_session_custom_root() -> Result<()> {
-    let session = Session::new(TESTING_SESSION, Root::Custom(env::temp_dir()))?;
+    let session = SessionBuilder::new(TESTING_SESSION.to_owned())
+        .root(env::temp_dir())?
+        .build()?;
     let output = session
         .target("display-message")?
         .args(["-p", "#{pane_current_path}"])

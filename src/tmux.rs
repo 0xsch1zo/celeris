@@ -89,6 +89,85 @@ pub enum Root {
     Custom(PathBuf),
 }
 
+pub struct SessionBuilder {
+    root: Root,
+    session_name: String,
+}
+
+impl SessionBuilder {
+    const OUTPUT_DELIM: &str = "|";
+    pub fn new(session_name: String) -> Self {
+        Self {
+            root: Root::Default,
+            session_name,
+        }
+    }
+
+    pub fn root(&mut self, path: PathBuf) -> Result<&mut Self> {
+        if !path.exists() {
+            return Err(eyre!(
+                "session: {}: root doesn't exist: {path:?}",
+                self.session_name
+            ));
+        }
+
+        self.root = Root::Custom(path);
+        Ok(self)
+    }
+
+    fn prepare(&self) -> Result<Command> {
+        let mut command = tmux();
+        // need to use low level api
+        command.args([
+            "new-session",
+            "-d",
+            "-s",
+            &self.session_name,
+            "-P",
+            "-F",
+            &format!(
+                "{}{}{}",
+                "#{window_id}",
+                Self::OUTPUT_DELIM,
+                "#{session_id}"
+            ),
+        ]);
+
+        self.prepare_root(&mut command)?;
+        Ok(command)
+    }
+
+    fn prepare_root(&self, command: &mut Command) -> Result<()> {
+        if let Root::Custom(root) = &self.root {
+            command.args(["-c", &utils::path_to_string(root)?]);
+        }
+        Ok(())
+    }
+
+    pub fn build(&mut self) -> Result<Arc<Session>> {
+        if Session::target_exists(&self.session_name)? {
+            return Err(eyre!(
+                "session with name: {}, already exists",
+                self.session_name
+            ));
+        }
+
+        let mut command = self.prepare()?;
+        let output = command.execute()?;
+        let (default_window_id, session_id) = output
+            .trim()
+            .split_once(Self::OUTPUT_DELIM)
+            .ok_or_eyre(format!(
+                "failed to create session, couldn't parse session or window id: {}",
+                output
+            ))?;
+        Ok(Session::new(
+            session_id.to_owned(),
+            default_window_id.to_owned(),
+        ))
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Session {
     session_id: String, // this is the target
@@ -98,39 +177,12 @@ pub struct Session {
 
 impl Session {
     // Can't run this if in tmux session already
-    pub fn new(session_name: &str, root: Root) -> Result<Arc<Self>> {
-        if Self::target_exists(session_name)? {
-            return Err(eyre!("session with name: {session_name}, already exists"));
-        }
-        const DELIM: &str = "|";
-        let mut command = tmux();
-        // need to use low level api
-        command.args([
-            "new-session",
-            "-d",
-            "-s",
-            session_name,
-            "-P",
-            "-F",
-            &format!("{}{}{}", "#{window_id}", DELIM, "#{session_id}"),
-        ]);
-
-        if let Root::Custom(root) = root {
-            command.args(["-c", &utils::path_to_string(&root)?]);
-        }
-
-        let output = command.execute()?;
-        let (default_window_id, session_id) =
-            output.trim().split_once(DELIM).ok_or_eyre(format!(
-                "failed to create session, couldn't parse session or window id: {}",
-                output
-            ))?;
-
-        Ok(Arc::new(Self {
+    fn new(session_id: String, default_window_id: String) -> Arc<Self> {
+        Arc::new(Self {
             session_id: session_id.to_string(),
             window_count: Arc::new(Mutex::new(0)),
             default_window_id: default_window_id.to_string(),
-        }))
+        })
     }
 
     pub fn from(session_identifier: &str) -> Result<Arc<Session>> {

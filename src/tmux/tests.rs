@@ -33,7 +33,7 @@ impl Session {
 }
 
 fn testing_session() -> Result<Arc<Session>> {
-    Ok(Session::new(TESTING_SESSION, Root::Default)?)
+    Ok(SessionBuilder::new(TESTING_SESSION.to_owned()).build()?)
 }
 
 fn selected_pane_id(target: &str) -> Result<String> {

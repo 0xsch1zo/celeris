@@ -18,7 +18,7 @@ fn split() -> Result<()> {
 
 #[test]
 fn split_custom_path() -> Result<()> {
-    let session = Session::new(TESTING_SESSION, Root::Default)?;
+    let session = testing_session()?;
     let window = Window::builder(session).build()?;
     let pane = window
         .default_pane
