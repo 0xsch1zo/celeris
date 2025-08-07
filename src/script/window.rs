@@ -6,9 +6,6 @@ use rhai::{CustomType, Engine, TypeBuilder};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-// TODO: consider making command work as run_command on a pane, right now command would just
-// confuse the user
-
 #[derive(Clone)]
 pub struct WindowBuilder {
     inner: Arc<Mutex<tmux::WindowBuilder>>,
@@ -56,10 +53,10 @@ impl CustomType for WindowBuilder {
     fn build(mut builder: TypeBuilder<Self>) {
         builder
             .with_name("WindowBuilder")
-            .with_fn("WindowBuilder", WindowBuilder::new)
+            .with_fn("Window", WindowBuilder::new)
             .with_fn("name", WindowBuilder::name)
             .with_fn("root", WindowBuilder::root)
-            .with_fn("command", WindowBuilder::command)
+            .with_fn("raw_command", WindowBuilder::command)
             .with_fn("build", WindowBuilder::build);
     }
 }

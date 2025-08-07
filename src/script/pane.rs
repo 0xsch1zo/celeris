@@ -114,8 +114,8 @@ impl Pane {
         Self { inner }
     }
 
-    fn split_builder(&mut self, direction: Direction) -> SplitBuilder {
-        SplitBuilder::new(self.inner.split_builder(direction))
+    fn split(&mut self, direction: Direction) -> SplitBuilder {
+        SplitBuilder::new(self.inner.split(direction))
     }
 
     fn select(&mut self) -> ScriptFuncResult<()> {
@@ -138,7 +138,7 @@ impl CustomType for Pane {
         builder
             .with_name("Pane")
             .with_fn("select", Pane::select)
-            .with_fn("split_builder", Pane::split_builder)
+            .with_fn("split", Pane::split)
             .with_fn("run_command", Pane::run_command);
     }
 }

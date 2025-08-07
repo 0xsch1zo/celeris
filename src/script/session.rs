@@ -1,20 +1,69 @@
-use crate::script::ScriptFuncResult;
+use crate::script::{ScriptFuncResult, eyre_to_rhai_err};
 use crate::tmux;
-use rhai::{CustomType, Engine, FuncRegistration, Module, TypeBuilder};
-use std::sync::Arc;
+use rhai::{CustomType, Engine, TypeBuilder};
+use std::{
+    path::PathBuf,
+    sync::{Arc, Mutex},
+};
 
+#[derive(Clone)]
+struct SessionBuilder {
+    inner: Arc<Mutex<tmux::SessionBuilder>>,
+}
+
+impl SessionBuilder {
+    fn new(session_name: &str) -> Self {
+        let builder = tmux::SessionBuilder::new(session_name.to_owned());
+        Self {
+            inner: Arc::new(Mutex::new(builder)),
+        }
+    }
+
+    fn root(&mut self, root: &str) -> ScriptFuncResult<Self> {
+        let root = PathBuf::from(root);
+        self.inner
+            .lock()
+            .unwrap()
+            .root(root)
+            .map_err(|e| eyre_to_rhai_err(e))?;
+        Ok(self.clone())
+    }
+
+    fn build(&mut self) -> ScriptFuncResult<Session> {
+        let tmux_session = self
+            .inner
+            .lock()
+            .unwrap()
+            .build()
+            .map_err(|e| eyre_to_rhai_err(e))?;
+        Ok(Session::new(tmux_session))
+    }
+}
+
+impl CustomType for SessionBuilder {
+    fn build(mut builder: TypeBuilder<Self>) {
+        builder
+            .with_name("SessionBuilder")
+            .with_fn("root", SessionBuilder::root)
+            .with_fn("build", SessionBuilder::build);
+    }
+}
 // wrapper around tmux::Session
 #[derive(Clone, Debug)]
 pub struct Session {
     inner: Arc<tmux::Session>,
 }
 
-// TODO: figure out what would be an idiomatic constructor
 impl Session {
-    pub fn new(tmux_session: Arc<tmux::Session>) -> ScriptFuncResult<Session> {
-        Ok(Session {
+    fn new(tmux_session: Arc<tmux::Session>) -> Session {
+        Session {
             inner: tmux_session,
-        })
+        }
+    }
+
+    fn attach(&mut self) -> ScriptFuncResult<()> {
+        self.inner.attach().map_err(|e| eyre_to_rhai_err(e))?;
+        Ok(())
     }
 
     pub fn inner(&self) -> Arc<tmux::Session> {
@@ -24,18 +73,14 @@ impl Session {
 
 impl CustomType for Session {
     fn build(mut builder: TypeBuilder<Self>) {
-        builder.with_name("Session");
+        builder
+            .with_name("Session")
+            .with_fn("attach", Session::attach);
     }
 }
 
-pub fn register(engine: &mut Engine, session: Arc<tmux::Session>) {
+pub fn register(engine: &mut Engine, session_name: String) {
     engine.build_type::<Session>();
-    let mut session_module = Module::new();
-    FuncRegistration::new("build")
-        .in_internal_namespace()
-        .set_into_module(&mut session_module, move || {
-            Session::new(Arc::clone(&session))
-        });
-
-    engine.register_static_module("Session", session_module.into());
+    engine.build_type::<SessionBuilder>();
+    engine.register_fn("Session", move || SessionBuilder::new(&session_name));
 }
