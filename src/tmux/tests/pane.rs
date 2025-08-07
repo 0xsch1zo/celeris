@@ -6,7 +6,7 @@ fn split() -> Result<()> {
     let session = testing_session()?;
     let window = Window::builder(session).build()?;
     let pane1 = window.default_pane();
-    let pane2 = pane1.split_builder(Direction::Vertical).build()?;
+    let pane2 = pane1.split(Direction::Vertical).build()?;
 
     assert_eq!(Session::target_exists(&pane1.target)?, true);
     assert_eq!(Session::target_exists(&pane2.target)?, true);
@@ -22,7 +22,7 @@ fn split_custom_path() -> Result<()> {
     let window = Window::builder(session).build()?;
     let pane = window
         .default_pane
-        .split_builder(Direction::Vertical)
+        .split(Direction::Vertical)
         .root(env::temp_dir())
         .build()?;
     let output = pane
@@ -39,7 +39,7 @@ fn split_percentage_sized() -> Result<()> {
     let window = Window::builder(session).build()?;
     let pane = window
         .default_pane()
-        .split_builder(Direction::Horizontal)
+        .split(Direction::Horizontal)
         .size(SplitSize::Percentage(0))
         .build()?;
 
@@ -62,7 +62,7 @@ fn split_percentage_sized() -> Result<()> {
 
     let _ = window
         .default_pane()
-        .split_builder(Direction::Horizontal)
+        .split(Direction::Horizontal)
         .size(SplitSize::Percentage(101))
         .build()
         .unwrap_err();
@@ -75,7 +75,7 @@ fn split_absolute_sized() -> Result<()> {
     let window = Window::builder(session).build()?;
     let pane = window
         .default_pane()
-        .split_builder(Direction::Horizontal)
+        .split(Direction::Horizontal)
         .size(SplitSize::Absolute(1))
         .build()?;
 
@@ -103,7 +103,7 @@ fn select() -> Result<()> {
     let session = testing_session()?;
     let window = Window::builder(Arc::clone(&session)).build()?;
     let pane1 = window.default_pane();
-    let _pane2 = pane1.split_builder(Direction::Vertical).build();
+    let _pane2 = pane1.split(Direction::Vertical).build();
     pane1.select()?;
     let output = session
         .target("display-message")?

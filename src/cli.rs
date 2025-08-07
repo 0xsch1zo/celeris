@@ -89,7 +89,6 @@ impl Into<MgrListSessionsOptions> for ListSessionsOptions {
             tmux_format: self.tmux_format,
             include_active: self.conflicting.include_active,
             exclude_running: self.conflicting.exclude_running,
-            only_running: self.conflicting.only_running,
         }
     }
 }
@@ -106,7 +105,4 @@ pub struct ListSessionsConflicting {
     /// config.
     #[arg(short, long)]
     exclude_running: bool,
-
-    #[arg(short, long)]
-    only_running: bool,
 }

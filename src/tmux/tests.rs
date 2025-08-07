@@ -44,7 +44,6 @@ fn selected_pane_id(target: &str) -> Result<String> {
         .to_owned())
 }
 
-// TODO: maybe a more complete test would be nice
 #[test]
 fn server_running_t() -> Result<()> {
     let _session = testing_session();

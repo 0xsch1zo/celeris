@@ -9,8 +9,8 @@ use crate::utils;
 use color_eyre::Result;
 use color_eyre::eyre::OptionExt;
 use color_eyre::eyre::WrapErr;
-use itertools::Itertools;
 use std::fs;
+use std::io::{self, Write};
 use std::path::PathBuf;
 use std::rc::Rc;
 
@@ -87,8 +87,6 @@ pub struct SessionManager {
     dir_mgr: Rc<DirectoryManager>,
 }
 
-// TODO: the program can be in a weird state when it it errors out during an action that get's
-// saved figure out if somethig can be done
 impl SessionManager {
     pub fn new(config: Rc<Config>, dir_mgr: Rc<DirectoryManager>) -> Result<Self> {
         Ok(Self {
@@ -116,7 +114,9 @@ impl SessionManager {
             .create(layout)
             .wrap_err("failed to create layout file")?;
         self.layout_mgr.edit(&name, &self.config)?;
-        // TODO: print the name of the sesssion created
+        io::stdout()
+            .write_all(name.as_bytes())
+            .wrap_err("failed to write the name of the sesssion created to stdout")?;
         Ok(())
     }
 
@@ -150,13 +150,7 @@ impl SessionManager {
             return Ok(());
         }
 
-        // TODO: lot's of stuff refactor this
-        let running_sessions =
-            Session::list_sessions().wrap_err("failed to get running sessions")?;
-        let running_sessions = running_sessions
-            .into_iter()
-            .filter(|s| Some(s) != active_session.as_ref())
-            .collect_vec();
+        let running_sessions = Self::running_sessions(active_session.as_ref())?;
         self.last_session_mgr
             .save(&tmux_name)
             .wrap_err("failed to save session name for later use")?;
@@ -169,10 +163,20 @@ impl SessionManager {
         Ok(())
     }
 
+    fn running_sessions(active_session: Option<&String>) -> Result<Vec<String>> {
+        let running_sessions =
+            Session::list_sessions().wrap_err("failed to get running sessions")?;
+        Ok(running_sessions
+            .into_iter()
+            .filter(|s| Some(s) != active_session)
+            .collect())
+    }
+
     fn run(&self, tmux_name: &str) -> Result<()> {
         let layout = self.layout(tmux_name)?;
-        script::run(layout, &self.dir_mgr.layouts_dir()?)
-            .wrap_err("an error occured while exucting the layout file: {tmux_name}")?;
+        script::run(layout, &self.dir_mgr.layouts_dir()?).wrap_err(format!(
+            "an error occured while exucting the layout file: {tmux_name}"
+        ))?;
         Ok(())
     }
 
@@ -202,7 +206,6 @@ mod list_sessions {
         pub tmux_format: bool,
         pub include_active: bool,
         pub exclude_running: bool,
-        pub only_running: bool,
     }
 
     struct ExcludeInfo {
@@ -249,10 +252,6 @@ mod list_sessions {
     }
 
     fn exclude(session_name: &str, info: &ExcludeInfo, opts: &Options) -> bool {
-        if opts.only_running {
-            return info.running_sessions.contains(&session_name.to_owned());
-        }
-
         if !opts.include_active
             && info.active_session.is_some()
             && session_name == info.active_session.as_ref().unwrap()

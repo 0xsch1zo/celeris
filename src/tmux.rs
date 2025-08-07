@@ -64,7 +64,6 @@ pub fn server_running() -> Result<bool> {
     Ok(status.success())
 }
 
-// TODO: check if the directions are right
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub enum Direction {
     Horizontal,
@@ -629,7 +628,7 @@ impl Pane {
     }
 
     // No reasson to return arc here because it's owned which is fine with rhai
-    pub fn split_builder(self: &Arc<Self>, direction: Direction) -> SplitBuilder {
+    pub fn split(self: &Arc<Self>, direction: Direction) -> SplitBuilder {
         SplitBuilder::new(Arc::clone(self), direction)
     }
 
