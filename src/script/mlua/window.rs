@@ -1,7 +1,8 @@
+/*use crate::script::mlua::IntoInteropResExt;
 use crate::script::pane::Pane;
 use crate::script::session::Session;
-use crate::script::{self, ScriptFuncResult};
 use crate::tmux::{self, Direction};
+use mlua::Result;
 use rhai::{CustomType, Engine, TypeBuilder};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -23,7 +24,7 @@ impl WindowBuilder {
         self.clone()
     }
 
-    fn root(&mut self, path: &str) -> ScriptFuncResult<Self> {
+    fn root(&mut self, path: &str) -> Result<Self> {
         let path = PathBuf::from(path);
         if !path.exists() {
             return Err(format!("{path:?} does not exist").into());
@@ -37,14 +38,9 @@ impl WindowBuilder {
         self.clone()
     }
 
-    fn build(&mut self) -> ScriptFuncResult<Window> {
+    fn build(&mut self) -> Result<Window> {
         Ok(Window {
-            inner: self
-                .inner
-                .lock()
-                .unwrap()
-                .build()
-                .map_err(|e| script::eyre_to_rhai_err(e))?,
+            inner: self.inner.lock().unwrap().build().into_interop()?,
         })
     }
 }
@@ -71,17 +67,13 @@ impl Window {
         Pane::new(Arc::clone(&self.inner.default_pane()))
     }
 
-    fn even_out(&mut self, direction: Direction) -> ScriptFuncResult<()> {
-        self.inner
-            .event_out(direction)
-            .map_err(|e| script::eyre_to_rhai_err(e))?;
+    fn even_out(&mut self, direction: Direction) -> Result<()> {
+        self.inner.event_out(direction).into_interop()?;
         Ok(())
     }
 
-    fn select(&mut self) -> ScriptFuncResult<()> {
-        self.inner
-            .select()
-            .map_err(|e| script::eyre_to_rhai_err(e))?;
+    fn select(&mut self) -> Result<()> {
+        self.inner.select().into_interop()?;
         Ok(())
     }
 }
@@ -99,4 +91,4 @@ impl CustomType for Window {
 pub fn register(engine: &mut Engine) {
     engine.build_type::<WindowBuilder>();
     engine.build_type::<Window>();
-}
+}*/

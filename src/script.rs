@@ -1,4 +1,4 @@
-//mod mlua;
+pub mod mlua;
 mod pane;
 mod session;
 mod window;

@@ -1,3 +1,4 @@
+//use crate::script::mlua::Error;
 use crate::script::{ScriptFuncResult, eyre_to_rhai_err};
 use crate::tmux;
 use rhai::{CustomType, Engine, TypeBuilder};
@@ -9,6 +10,7 @@ use std::{
 #[derive(Clone)]
 struct SessionBuilder {
     inner: Arc<Mutex<tmux::SessionBuilder>>,
+    session_name: String,
 }
 
 impl SessionBuilder {
@@ -16,6 +18,7 @@ impl SessionBuilder {
         let builder = tmux::SessionBuilder::new(session_name.to_owned());
         Self {
             inner: Arc::new(Mutex::new(builder)),
+            session_name: session_name.to_owned(),
         }
     }
 
@@ -40,14 +43,6 @@ impl SessionBuilder {
     }
 }
 
-impl CustomType for SessionBuilder {
-    fn build(mut builder: TypeBuilder<Self>) {
-        builder
-            .with_name("SessionBuilder")
-            .with_fn("root", SessionBuilder::root)
-            .with_fn("build", SessionBuilder::build);
-    }
-}
 // wrapper around tmux::Session
 #[derive(Clone, Debug)]
 pub struct Session {
@@ -81,6 +76,6 @@ impl CustomType for Session {
 
 pub fn register(engine: &mut Engine, session_name: String) {
     engine.build_type::<Session>();
-    engine.build_type::<SessionBuilder>();
+    //    engine.build_type::<SessionBuilder>();
     engine.register_fn("Session", move || SessionBuilder::new(&session_name));
 }

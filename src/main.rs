@@ -4,6 +4,7 @@ use sesh::cli::{Cli, Commands};
 use sesh::config::Config;
 use sesh::directory_manager::DirectoryManager;
 use sesh::repo_search;
+use sesh::script::mlua;
 use sesh::session_manager::{SessionManager, SessionProperties};
 use std::io::{self, Write};
 use std::rc::Rc;
@@ -14,7 +15,8 @@ fn main() -> Result<()> {
         .display_env_section(false)
         .install()?;
 
-    let cli = Cli::parse();
+    mlua::run()?;
+    /*let cli = Cli::parse();
     let mut dir_mgr = DirectoryManager::new();
     if let Some(config_dir) = cli.config_dir {
         dir_mgr.set_config_dir(config_dir)?;
@@ -39,6 +41,6 @@ fn main() -> Result<()> {
         Commands::EditSession { name } => session_manager.edit(&name)?,
         Commands::Switch { target } => session_manager.switch(target.into())?,
         Commands::RemoveSession { name } => session_manager.remove(&name)?,
-    }
+    }*/
     Ok(())
 }
