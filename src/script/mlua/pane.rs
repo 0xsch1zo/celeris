@@ -1,6 +1,5 @@
 use crate::script::mlua::IntoInteropResExt;
 use crate::tmux::{self, BuilderTransform};
-use color_eyre::eyre::Context;
 use mlua::{FromLua, Lua, LuaSerdeExt, Result, Table, UserData};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -30,21 +29,16 @@ impl FromLua for Direction {
     }
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[serde(tag = "type")]
 enum SplitSize {
-    AbsoluteSize(u32),
-    PercentageSize(u8),
+    Absolute { value: u32 },
+    Percentage { value: u8 },
 }
 
 impl FromLua for SplitSize {
     fn from_lua(value: mlua::Value, lua: &mlua::Lua) -> mlua::Result<Self> {
-        println!(
-            "{}",
-            toml::to_string(&SplitSize::PercentageSize(10))
-                .wrap_err("d")
-                .into_interop()?
-        );
         lua.from_value(value)
     }
 }
@@ -52,16 +46,15 @@ impl FromLua for SplitSize {
 impl From<SplitSize> for tmux::SplitSize {
     fn from(value: SplitSize) -> Self {
         match value {
-            SplitSize::AbsoluteSize(size) => tmux::SplitSize::Absolute(size),
-            SplitSize::PercentageSize(size) => tmux::SplitSize::Percentage(size),
+            SplitSize::Absolute { value } => tmux::SplitSize::Absolute(value),
+            SplitSize::Percentage { value } => tmux::SplitSize::Percentage(value),
         }
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct SplitOptions {
     root: Option<PathBuf>,
-    // FIXME
     size: Option<SplitSize>,
 }
 

@@ -46,7 +46,9 @@ impl TmuxExecuteExt for Command {
 
 fn targeted_command<T: Target + Display>(target: &T, command: &str) -> Result<Command> {
     if !target_exists(target)? {
-        return Err(eyre!("target: {target}, doesn't exist"));
+        return Err(eyre!(
+            "tried to execute a commend: {command} with a non-existing target: {target}"
+        ));
     }
     let mut tmux = tmux();
     tmux.args([command, "-t", target.get()]);

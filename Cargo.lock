@@ -1241,6 +1241,7 @@ dependencies = [
  "either",
  "erased-serde",
  "mlua-sys",
+ "mlua_derive",
  "num-traits",
  "parking_lot",
  "rustc-hash",
@@ -1258,6 +1259,21 @@ dependencies = [
  "cc",
  "cfg-if",
  "pkg-config",
+]
+
+[[package]]
+name = "mlua_derive"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "465bddde514c4eb3b50b543250e97c1d4b284fa3ef7dc0ba2992c77545dbceb2"
+dependencies = [
+ "itertools",
+ "once_cell",
+ "proc-macro-error2",
+ "proc-macro2",
+ "quote",
+ "regex",
+ "syn 2.0.104",
 ]
 
 [[package]]

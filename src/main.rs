@@ -13,7 +13,6 @@ fn main() -> Result<()> {
     color_eyre::config::HookBuilder::default()
         .display_env_section(false)
         .install()?;
-
     let cli = Cli::parse();
     let mut dir_mgr = DirectoryManager::new();
     if let Some(config_dir) = cli.config_dir {

@@ -50,8 +50,8 @@ impl WindowBuilder {
     fn prepare_options(&self) -> Result<Vec<String>> {
         let mut options: Vec<String> = Vec::new();
         self.prepare_name(&mut options);
-        self.prepare_shell_command(&mut options);
         self.prepare_root(&mut options)?;
+        self.prepare_raw_command(&mut options);
 
         Ok(options)
     }
@@ -64,7 +64,7 @@ impl WindowBuilder {
         options.extend(["-n".to_owned(), name.to_owned()]);
     }
 
-    fn prepare_shell_command(&self, options: &mut Vec<String>) {
+    fn prepare_raw_command(&self, options: &mut Vec<String>) {
         let Some(command) = &self.shell_command else {
             return;
         };
@@ -203,7 +203,7 @@ mod tests {
     use super::*;
     use crate::tmux::pane::Direction;
     use color_eyre::eyre::OptionExt;
-    use std::env;
+    use std::{env, thread, time::Duration};
     use tmux::tests::*;
 
     #[test]
@@ -243,6 +243,44 @@ mod tests {
             .args(["-p", "#{window_name}"])
             .execute()?;
         assert_eq!(output.trim(), "test");
+        Ok(())
+    }
+
+    #[test]
+    fn new_window_command() -> Result<()> {
+        let session = testing_session()?;
+
+        let real_command = "cat";
+        let command = format!("'{real_command}'"); // to ignore aliases
+        //should run until Ctrl+C or the session is killled. Will work
+        // only on most systems. Testing this without getting execution
+        // is probably impossible
+        let window = Window::builder(&session).raw_command(command).build()?;
+        // Yes the shell is sometimes this slow
+        thread::sleep(Duration::from_secs(1));
+        let output = tmux::targeted_command(window.target(), "display-message")?
+            .args(["-p", "#{pane_current_command}"])
+            .execute()?;
+        assert_eq!(output.trim(), real_command);
+        Ok(())
+    }
+
+    #[test]
+    fn new_window_command_mixed() -> Result<()> {
+        let session = testing_session()?;
+
+        let real_command = "cat";
+        let command = format!("'{real_command}'"); // to ignore aliases
+        let window = Window::builder(&session)
+            .name("testt".to_owned())
+            .root(env::temp_dir())
+            .raw_command(command)
+            .build()?;
+        thread::sleep(Duration::from_secs(1));
+        let output = tmux::targeted_command(window.target(), "display-message")?
+            .args(["-p", "#{pane_current_command}"])
+            .execute()?;
+        assert_eq!(output.trim(), real_command);
         Ok(())
     }
 
