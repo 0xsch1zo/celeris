@@ -93,6 +93,8 @@ impl SessionBuilder {
     }
 }
 
+impl tmux::BuilderTransform for SessionBuilder {}
+
 #[derive(Debug)]
 pub struct Session {
     window_count: Mutex<usize>,

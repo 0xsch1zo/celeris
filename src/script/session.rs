@@ -1,4 +1,4 @@
-//use crate::script::mlua::Error;
+/*
 use crate::script::{ScriptFuncResult, eyre_to_rhai_err};
 use crate::tmux;
 use rhai::{CustomType, Engine, TypeBuilder};
@@ -76,6 +76,6 @@ impl CustomType for Session {
 
 pub fn register(engine: &mut Engine, session_name: String) {
     engine.build_type::<Session>();
-    //    engine.build_type::<SessionBuilder>();
+    //engine.build_type::<SessionBuilder>();
     engine.register_fn("Session", move || SessionBuilder::new(&session_name));
-}
+}*/

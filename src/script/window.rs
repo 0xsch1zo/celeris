@@ -1,4 +1,4 @@
-use crate::script::pane::Pane;
+/*use crate::script::pane::Pane;
 use crate::script::session::Session;
 use crate::script::{self, ScriptFuncResult};
 use crate::tmux::{self, Direction};
@@ -99,4 +99,4 @@ impl CustomType for Window {
 pub fn register(engine: &mut Engine) {
     engine.build_type::<WindowBuilder>();
     engine.build_type::<Window>();
-}
+}*/

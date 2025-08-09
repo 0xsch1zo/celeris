@@ -1,106 +1,88 @@
-use crate::script::{self, ScriptFuncResult};
-use crate::tmux::{self, Direction, SplitSize};
-use rhai::{CustomType, Engine, Module, TypeBuilder, export_module, exported_module};
+use crate::script::mlua::IntoInteropResExt;
+use crate::tmux::{self, BuilderTransform};
+use color_eyre::eyre::Context;
+use mlua::{FromLua, Lua, LuaSerdeExt, Result, Table, UserData};
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
-macro_rules! pure_enum_module {
-    ($module:ident : $typ:ty => $($variant:ident),+) => {
-        use rhai::Dynamic;
-        use rhai::plugin::*;
-
-        #[export_module]
-        pub mod $module {
-            $(
-                #[allow(non_upper_case_globals)]
-                pub const $variant: $typ = <$typ>::$variant;
-            )*
-
-            #[rhai_fn(global, get = "type", pure)]
-            pub fn get_type(this: &mut $typ) -> String {
-                match this {
-                    $( <$typ>::$variant => format!("{}", stringify!($variant)), )+
-                }
-            }
-
-            #[rhai_fn(global, name = "to_string", name = "to_debug", pure)]
-            pub fn to_string(this: &mut $typ) -> String {
-                format!("{this:?}")
-            }
-
-            #[rhai_fn(global, name = "==", pure)]
-            pub fn eq(this: &mut $typ, other: $typ) -> bool {
-                *this == other
-            }
-
-            #[rhai_fn(global, name = "!=", pure)]
-            pub fn neq(this: &mut $typ, other: $typ) -> bool {
-                *this != other
-            }
-        }
-    };
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Direction {
+    Horizontal,
+    Vertical,
 }
 
-pure_enum_module! { direction_enum_mod: Direction => Vertical, Horizontal }
-
-#[derive(Clone)]
-pub struct SplitBuilder {
-    inner: Arc<Mutex<tmux::SplitBuilder>>,
-}
-
-impl SplitBuilder {
-    fn new(inner: tmux::SplitBuilder) -> Self {
-        Self {
-            inner: Arc::new(Mutex::new(inner)),
+impl From<Direction> for tmux::Direction {
+    fn from(value: Direction) -> Self {
+        match value {
+            Direction::Horizontal => tmux::Direction::Horizontal,
+            Direction::Vertical => tmux::Direction::Vertical,
         }
-    }
-
-    fn root(&mut self, path: &str) -> ScriptFuncResult<Self> {
-        let path = PathBuf::from(path);
-        if !path.exists() {
-            return Err(format!("{path:?} does not exist").into());
-        }
-        self.inner.lock().unwrap().root(path);
-        Ok(self.clone())
-    }
-
-    fn absolute_size(&mut self, size: i64) -> Self {
-        self.inner
-            .lock()
-            .unwrap()
-            .size(SplitSize::Absolute(size as u32));
-        self.clone()
-    }
-
-    fn percentage_size(&mut self, size: i64) -> Self {
-        self.inner
-            .lock()
-            .unwrap()
-            .size(SplitSize::Percentage(size as u8));
-        self.clone()
-    }
-
-    fn build(&mut self) -> ScriptFuncResult<Pane> {
-        Ok(Pane {
-            inner: Arc::new(
-                self.inner
-                    .lock()
-                    .unwrap()
-                    .build()
-                    .map_err(|e| script::eyre_to_rhai_err(e))?,
-            ),
-        })
     }
 }
 
-impl CustomType for SplitBuilder {
-    fn build(mut builder: TypeBuilder<Self>) {
-        builder
-            .with_name("SplitBuilder")
-            .with_fn("root", SplitBuilder::root)
-            .with_fn("absolute_size", SplitBuilder::absolute_size)
-            .with_fn("percentage_size", SplitBuilder::percentage_size)
-            .with_fn("build", SplitBuilder::build);
+impl UserData for Direction {}
+
+impl FromLua for Direction {
+    fn from_lua(value: mlua::Value, lua: &mlua::Lua) -> mlua::Result<Self> {
+        lua.from_value(value)
+    }
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum SplitSize {
+    AbsoluteSize(u32),
+    PercentageSize(u8),
+}
+
+impl FromLua for SplitSize {
+    fn from_lua(value: mlua::Value, lua: &mlua::Lua) -> mlua::Result<Self> {
+        println!(
+            "{}",
+            toml::to_string(&SplitSize::PercentageSize(10))
+                .wrap_err("d")
+                .into_interop()?
+        );
+        lua.from_value(value)
+    }
+}
+
+impl From<SplitSize> for tmux::SplitSize {
+    fn from(value: SplitSize) -> Self {
+        match value {
+            SplitSize::AbsoluteSize(size) => tmux::SplitSize::Absolute(size),
+            SplitSize::PercentageSize(size) => tmux::SplitSize::Percentage(size),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct SplitOptions {
+    root: Option<PathBuf>,
+    // FIXME
+    size: Option<SplitSize>,
+}
+
+impl SplitOptions {
+    fn into_builder(
+        self,
+        sibling_pane: Arc<tmux::Pane>,
+        direction: Direction,
+    ) -> tmux::SplitBuilder {
+        sibling_pane
+            .split(direction.into())
+            .builder_transform(self.root, tmux::SplitBuilder::root)
+            .builder_transform(self.size.map(|s| s.into()), tmux::SplitBuilder::size)
+    }
+}
+
+impl UserData for SplitOptions {}
+
+impl FromLua for SplitOptions {
+    fn from_lua(value: mlua::Value, lua: &Lua) -> Result<Self> {
+        lua.from_value(value)
     }
 }
 
@@ -114,39 +96,35 @@ impl Pane {
         Self { inner }
     }
 
-    fn split(&mut self, direction: Direction) -> SplitBuilder {
-        SplitBuilder::new(self.inner.split(direction))
+    fn split(_: &Lua, this: &Self, (direction, opts): (Direction, SplitOptions)) -> Result<Pane> {
+        let inner = opts
+            .into_builder(Arc::clone(&this.inner), direction)
+            .build()
+            .into_interop()?;
+        Ok(Pane::new(Arc::new(inner)))
     }
 
-    fn select(&mut self) -> ScriptFuncResult<()> {
-        self.inner
-            .select()
-            .map_err(|e| script::eyre_to_rhai_err(e))?;
+    fn select(_: &Lua, this: &Self, _: ()) -> Result<()> {
+        this.inner.select().into_interop()?;
         Ok(())
     }
 
-    fn run_command(&mut self, command: &str) -> ScriptFuncResult<()> {
-        self.inner
-            .run_command(command)
-            .map_err(|e| script::eyre_to_rhai_err(e))?;
+    fn run_command(_: &Lua, this: &Self, command: String) -> Result<()> {
+        this.inner.run_command(&command).into_interop()?;
         Ok(())
     }
 }
 
-impl CustomType for Pane {
-    fn build(mut builder: TypeBuilder<Self>) {
-        builder
-            .with_name("Pane")
-            .with_fn("select", Pane::select)
-            .with_fn("split", Pane::split)
-            .with_fn("run_command", Pane::run_command);
+impl UserData for Pane {
+    fn add_methods<M: mlua::UserDataMethods<Self>>(methods: &mut M) {
+        // TODO: constider making static, something like sesh.Pane.split()
+        methods.add_method("split", Pane::split);
+        methods.add_method("select", Pane::select);
+        methods.add_method("run_command", Pane::run_command);
     }
 }
 
-pub fn register(engine: &mut Engine) {
-    engine.build_type::<SplitBuilder>();
-    engine.build_type::<Pane>();
-
-    let direction_module = exported_module!(direction_enum_mod);
-    engine.register_static_module("Direction", direction_module.into());
+pub fn register(ctx: &Lua, api: &mut Table) -> Result<()> {
+    api.set("Pane", ctx.create_proxy::<Pane>()?)?;
+    Ok(())
 }

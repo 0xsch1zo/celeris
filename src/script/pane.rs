@@ -1,4 +1,4 @@
-use crate::script::{self, ScriptFuncResult};
+/*use crate::script::{self, ScriptFuncResult};
 use crate::tmux::{self, Direction, SplitSize};
 use rhai::{CustomType, Engine, Module, TypeBuilder, export_module, exported_module};
 use std::path::PathBuf;
@@ -149,4 +149,4 @@ pub fn register(engine: &mut Engine) {
 
     let direction_module = exported_module!(direction_enum_mod);
     engine.register_static_module("Direction", direction_module.into());
-}
+}*/

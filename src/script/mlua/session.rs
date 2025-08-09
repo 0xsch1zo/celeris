@@ -1,7 +1,7 @@
 use crate::script::mlua::IntoInteropResExt;
 use crate::tmux;
 use color_eyre::eyre::WrapErr;
-use mlua::{AnyUserData, Lua, LuaSerdeExt, Result, UserData, UserDataMethods, Value};
+use mlua::{FromLua, Lua, LuaSerdeExt, Result, Table, UserData, UserDataMethods, Value};
 use serde::{Deserialize, Serialize};
 use std::{path::PathBuf, sync::Arc};
 
@@ -18,53 +18,38 @@ impl SessionOptions {
         }
         Ok(builder)
     }
-
-    /*fn try_new(ctx: &Lua, _: ()) -> Result<Self> {
-        let session_name: String = ctx
-            .named_registry_value("SESH_SESSION_NAME")
-            .wrap_err("failed to get session name from the lua registry")
-            .into_interop()?;
-
-        let builder = tmux::SessionBuilder::new(session_name);
-        Ok(Self {
-            inner: Arc::new(Mutex::new(builder)),
-        })
-    }*/
-
-    /*fn root(_: &Lua, this: &mut Self, root: String) -> Result<Self> {
-        let root = PathBuf::from(root);
-        this.inner.lock().unwrap().root(root).into_interop()?;
-        Ok(this.clone())
-    }
-
-    fn build(_: &Lua, this: &mut Self, _: ()) -> Result<Session> {
-        let tmux_session = this.inner.lock().unwrap().build().into_interop()?;
-        Ok(Session::new(tmux_session))
-    }*/
 }
 
 impl UserData for SessionOptions {}
 
+impl FromLua for SessionOptions {
+    fn from_lua(value: Value, lua: &Lua) -> Result<Self> {
+        lua.from_value::<Self>(value)
+    }
+}
 // wrapper around tmux::Session
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, FromLua)]
 pub struct Session {
     inner: Arc<tmux::Session>,
 }
 
 impl Session {
-    pub fn try_new(ctx: &Lua, session_name: String, opts: Value) -> Result<Session> {
-        /*let session_name: String = ctx
-        .named_registry_value("SESH_SESSION_NAME")
-        .wrap_err("failed to get session name from the lua registry")
-        .into_interop()?;*/
+    fn try_new(ctx: &Lua, opts: SessionOptions) -> Result<Session> {
+        let session_name: String = ctx
+            .named_registry_value("SESH_SESSION_NAME")
+            .wrap_err("failed to get session name from the lua registry")
+            .into_interop()?;
 
-        let opts = ctx.from_value::<SessionOptions>(opts)?;
         Ok(Self {
             inner: opts
                 .try_into_builder(session_name)?
                 .build()
                 .into_interop()?,
         })
+    }
+
+    pub fn inner(self) -> Arc<tmux::Session> {
+        self.inner
     }
 
     fn attach(_: &Lua, this: &mut Self, _: ()) -> Result<()> {
@@ -75,6 +60,12 @@ impl Session {
 
 impl UserData for Session {
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
+        methods.add_function("new", Session::try_new);
         methods.add_method_mut("attach", Session::attach);
     }
+}
+
+pub fn register(ctx: &Lua, api: &mut Table) -> Result<()> {
+    api.set("Session", ctx.create_proxy::<Session>()?)?;
+    Ok(())
 }

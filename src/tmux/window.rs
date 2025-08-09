@@ -26,19 +26,25 @@ impl WindowBuilder {
         }
     }
 
-    pub fn name(&mut self, name: String) -> &mut Self {
-        self.name = Some(name);
-        self
+    pub fn name(self, name: String) -> Self {
+        Self {
+            name: Some(name),
+            ..self
+        }
     }
 
-    pub fn root(&mut self, path: PathBuf) -> &mut Self {
-        self.root = Root::Custom(path);
-        self
+    pub fn root(self, path: PathBuf) -> Self {
+        Self {
+            root: Root::Custom(path),
+            ..self
+        }
     }
 
-    pub fn shell_command(&mut self, command: String) -> &mut Self {
-        self.shell_command = Some(command);
-        self
+    pub fn raw_command(self, command: String) -> Self {
+        Self {
+            shell_command: Some(command),
+            ..self
+        }
     }
 
     fn prepare_options(&self) -> Result<Vec<String>> {
@@ -93,7 +99,7 @@ impl WindowBuilder {
         Ok(WindowCore::new(target, default_pane_target))
     }
 
-    pub fn build(&mut self) -> Result<Arc<Window>> {
+    pub fn build(self) -> Result<Window> {
         let window_core = self.create_window()?;
         session::register_window(&self.session, &window_core)?;
 
@@ -103,6 +109,8 @@ impl WindowBuilder {
         Ok(Window::new(window_core))
     }
 }
+
+impl tmux::BuilderTransform for WindowBuilder {}
 
 #[derive(Clone, Debug)]
 pub struct WindowCore {
@@ -161,11 +169,11 @@ pub struct Window {
 }
 
 impl Window {
-    fn new(window_core: WindowCore) -> Arc<Self> {
-        Arc::new(Self {
+    fn new(window_core: WindowCore) -> Self {
+        Self {
             default_pane: Arc::new(pane::build_pane(window_core.default_pane_target.clone())),
             window_core,
-        })
+        }
     }
 
     pub fn builder(session: &Arc<Session>) -> WindowBuilder {

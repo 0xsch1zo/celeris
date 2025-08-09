@@ -3,7 +3,7 @@ mod pane;
 mod session;
 mod window;
 
-use crate::layout::Layout;
+/*use crate::layout::Layout;
 use color_eyre::eyre::{Context, Report, Result};
 use rhai::{Engine, EvalAltResult};
 use std::fs;
@@ -27,4 +27,4 @@ pub fn run(layout: &Layout, layouts_dir: &Path) -> Result<()> {
     engine.run(&script)?;
 
     Ok(())
-}
+}*/

@@ -137,7 +137,7 @@ impl Layout {
     }
 
     pub fn extension() -> OsStr {
-        "rhai".into()
+        "lua".into()
     }
 }
 
@@ -162,7 +162,7 @@ impl<'a> ExtractLayouts<'a> {
         I: Iterator<Item = LayoutInfo> + 'a,
     {
         let iter = iter
-            .filter(|info| info.is_file.clone())
+            .filter(|info| info.is_file)
             .filter(|info| info.path.extension() == Some(&OsStr::from(Layout::extension())))
             .map(|info| {
                 Ok(utils::file_stem(&info.path).map_err(|e| Error::InvalidFilename(e.into()))?)

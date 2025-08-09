@@ -174,7 +174,7 @@ impl SessionManager {
 
     fn run(&self, tmux_name: &str) -> Result<()> {
         let layout = self.layout(tmux_name)?;
-        script::run(layout, &self.dir_mgr.layouts_dir()?).wrap_err(format!(
+        script::mlua::run(layout, &self.dir_mgr.layouts_dir()?).wrap_err(format!(
             "an error occured while exucting the layout file: {tmux_name}"
         ))?;
         Ok(())

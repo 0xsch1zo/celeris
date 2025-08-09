@@ -15,6 +15,7 @@ pub enum SplitSize {
     Percentage(u8),
     Absolute(u32),
 }
+
 pub struct SplitBuilder {
     direction: Direction,
     root: Root,
@@ -32,14 +33,18 @@ impl SplitBuilder {
         }
     }
 
-    pub fn size(&mut self, size: SplitSize) -> &mut Self {
-        self.size = Some(size);
-        self
+    pub fn size(self, size: SplitSize) -> Self {
+        Self {
+            size: Some(size),
+            ..self
+        }
     }
 
-    pub fn root(&mut self, path: PathBuf) -> &mut Self {
-        self.root = Root::Custom(path);
-        self
+    pub fn root(self, path: PathBuf) -> Self {
+        Self {
+            root: Root::Custom(path),
+            ..self
+        }
     }
 
     fn prepare_options(&self) -> Result<Vec<String>> {
@@ -97,6 +102,8 @@ impl SplitBuilder {
         Ok(build_pane(target))
     }
 }
+
+impl tmux::BuilderTransform for SplitBuilder {}
 
 #[derive(Clone, Debug)]
 pub struct Pane {

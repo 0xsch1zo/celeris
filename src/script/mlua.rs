@@ -2,14 +2,11 @@ mod pane;
 mod session;
 mod window;
 
-use session::Session;
-use std::path::{Path, PathBuf};
+use color_eyre::{Report, eyre};
+use mlua::Lua;
+use std::path::Path;
 
-use color_eyre::{
-    Report,
-    eyre::{self, Context},
-};
-use mlua::{Lua, Value};
+use crate::layout::Layout;
 struct Error(Report);
 
 impl From<Report> for Error {
@@ -34,21 +31,18 @@ impl From<Error> for mlua::Error {
     }
 }
 
-pub fn run() -> eyre::Result<()> {
+pub fn run(layout: &Layout, layouts_dir: &Path) -> eyre::Result<()> {
     let lua = Lua::new();
-    let globals = lua.globals();
-    let api = lua.create_table()?;
-    globals.set("sesh", &api)?;
-    let session = lua.create_table()?;
-    let session_name = String::from("test");
-    api.set("session", &session)?;
-    session.set(
-        "new",
-        lua.create_function(move |ctx, (root, opts): (PathBuf, Value)| {
-            Session::try_new(ctx, session_name.clone(), opts)
-        })?,
-    )?;
+    lua.set_named_registry_value("SESH_SESSION_NAME", layout.tmux_name())?;
 
-    lua.load(Path::new("test.lua")).exec()?;
+    let mut api = lua.create_table()?;
+    lua.register_module("sesh", &api)?;
+
+    session::register(&lua, &mut api)?;
+    window::register(&lua, &mut api)?;
+    pane::register(&lua, &mut api)?;
+
+    let layout_path = layout.storage_path(layouts_dir);
+    lua.load(layout_path).exec()?;
     Ok(())
 }

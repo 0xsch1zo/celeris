@@ -202,3 +202,25 @@ fn target_exists<T: Target>(target: &T) -> Result<bool> {
         .wrap_err_with(|| "has-session failed to execute")?;
     Ok(has_session_status.success())
 }
+
+pub trait BuilderTransform: Sized {
+    fn try_buider_transform<T, Tr, E>(self, opt: Option<T>, transformer: Tr) -> Result<Self, E>
+    where
+        Tr: FnOnce(Self, T) -> Result<Self, E>,
+    {
+        match opt {
+            Some(opt) => transformer(self, opt),
+            None => Ok(self),
+        }
+    }
+
+    fn builder_transform<T, Tr>(self, opt: Option<T>, transformer: Tr) -> Self
+    where
+        Tr: FnOnce(Self, T) -> Self,
+    {
+        match opt {
+            Some(t) => transformer(self, t),
+            None => self,
+        }
+    }
+}
