@@ -1,63 +1,36 @@
-/*use crate::script::pane::Pane;
-use crate::script::session::Session;
-use crate::script::{self, ScriptFuncResult};
-use crate::tmux::{self, Direction};
-use rhai::{CustomType, Engine, TypeBuilder};
+use crate::script::{
+    IntoInteropResExt,
+    pane::{Direction, Pane},
+    session::Session,
+};
+use crate::tmux::{self, BuilderTransform};
+use mlua::{FromLua, Lua, LuaSerdeExt, Result, Table, UserData, Value};
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
-#[derive(Clone)]
-pub struct WindowBuilder {
-    inner: Arc<Mutex<tmux::WindowBuilder>>,
+#[derive(Serialize, Deserialize, Debug)]
+pub struct WindowOptions {
+    name: Option<String>,
+    root: Option<PathBuf>,
+    raw_command: Option<String>,
 }
 
-impl WindowBuilder {
-    fn new(session: Session) -> Self {
-        WindowBuilder {
-            inner: Arc::new(Mutex::new(tmux::WindowBuilder::new(session.inner()))),
-        }
-    }
-
-    fn name(&mut self, name: &str) -> Self {
-        self.inner.lock().unwrap().name(name.to_owned());
-        self.clone()
-    }
-
-    fn root(&mut self, path: &str) -> ScriptFuncResult<Self> {
-        let path = PathBuf::from(path);
-        if !path.exists() {
-            return Err(format!("{path:?} does not exist").into());
-        }
-        self.inner.lock().unwrap().root(path);
-        Ok(self.clone())
-    }
-
-    fn command(&mut self, command: &str) -> Self {
-        self.inner.lock().unwrap().shell_command(command.to_owned());
-        self.clone()
-    }
-
-    fn build(&mut self) -> ScriptFuncResult<Window> {
-        Ok(Window {
-            inner: self
-                .inner
-                .lock()
-                .unwrap()
-                .build()
-                .map_err(|e| script::eyre_to_rhai_err(e))?,
-        })
+impl WindowOptions {
+    fn try_into_builder(self, session: Arc<tmux::Session>) -> Result<tmux::WindowBuilder> {
+        Ok(tmux::WindowBuilder::new(session)
+            .builder_transform(self.name, tmux::WindowBuilder::name)
+            .try_builder_transform(self.root, tmux::WindowBuilder::root)
+            .into_interop()?
+            .builder_transform(self.raw_command, tmux::WindowBuilder::raw_command))
     }
 }
 
-impl CustomType for WindowBuilder {
-    fn build(mut builder: TypeBuilder<Self>) {
-        builder
-            .with_name("WindowBuilder")
-            .with_fn("Window", WindowBuilder::new)
-            .with_fn("name", WindowBuilder::name)
-            .with_fn("root", WindowBuilder::root)
-            .with_fn("raw_command", WindowBuilder::command)
-            .with_fn("build", WindowBuilder::build);
+impl UserData for WindowOptions {}
+
+impl FromLua for WindowOptions {
+    fn from_lua(value: Value, lua: &Lua) -> Result<Self> {
+        lua.from_value::<Self>(value)
     }
 }
 
@@ -67,36 +40,37 @@ pub struct Window {
 }
 
 impl Window {
-    fn default_pane(&mut self) -> Pane {
-        Pane::new(Arc::clone(&self.inner.default_pane()))
+    fn try_new(_: &Lua, (session, opts): (Session, WindowOptions)) -> Result<Window> {
+        let builder = opts.try_into_builder(session.inner())?;
+        Ok(Self {
+            inner: Arc::new(builder.build().into_interop()?),
+        })
     }
 
-    fn even_out(&mut self, direction: Direction) -> ScriptFuncResult<()> {
-        self.inner
-            .event_out(direction)
-            .map_err(|e| script::eyre_to_rhai_err(e))?;
+    fn default_pane(_: &Lua, this: &Self, _: ()) -> Result<Pane> {
+        Ok(Pane::new(Arc::clone(&this.inner.default_pane())))
+    }
+
+    fn even_out(_: &Lua, this: &Self, direction: Direction) -> Result<()> {
+        this.inner.event_out(direction.into()).into_interop()?;
         Ok(())
     }
 
-    fn select(&mut self) -> ScriptFuncResult<()> {
-        self.inner
-            .select()
-            .map_err(|e| script::eyre_to_rhai_err(e))?;
+    fn select(_: &Lua, this: &Self, _: ()) -> Result<()> {
+        this.inner.select().into_interop()?;
         Ok(())
     }
 }
 
-impl CustomType for Window {
-    fn build(mut builder: TypeBuilder<Self>) {
-        builder
-            .with_name("Window")
-            .with_fn("default_pane", Window::default_pane)
-            .with_fn("even_out", Window::even_out)
-            .with_fn("select", Window::select);
+impl UserData for Window {
+    fn add_methods<M: mlua::UserDataMethods<Self>>(methods: &mut M) {
+        methods.add_function("new", Window::try_new);
+        methods.add_method("default_pane", Window::default_pane);
+        methods.add_method("even_out", Window::even_out);
+        methods.add_method("select", Window::select);
     }
 }
-
-pub fn register(engine: &mut Engine) {
-    engine.build_type::<WindowBuilder>();
-    engine.build_type::<Window>();
-}*/
+pub fn register(ctx: &Lua, api: &mut Table) -> Result<()> {
+    api.set("Window", ctx.create_proxy::<Window>()?)?;
+    Ok(())
+}
