@@ -86,7 +86,7 @@ pub struct Root(RootOptions);
 
 impl Root {
     pub fn custom(path: PathBuf) -> Result<Self> {
-        if path.exists() {
+        if !path.exists() {
             return Err(eyre!("Root path doesn't exist: {path:?}"));
         }
 

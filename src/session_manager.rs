@@ -10,40 +10,20 @@ use color_eyre::Result;
 use color_eyre::eyre::OptionExt;
 use color_eyre::eyre::WrapErr;
 use std::fs;
-use std::io::{self, Write};
 use std::path::PathBuf;
 use std::rc::Rc;
 
-#[derive(Clone, Debug)]
-pub enum Name {
-    Deduced,
-    Custom(String),
-}
-
-#[derive(Clone)]
-pub struct SessionProperties {
-    pub name: Name,
-    pub path: PathBuf,
-}
-
-impl SessionProperties {
-    pub fn try_from(name: Option<String>, path: PathBuf) -> Result<Self> {
-        let name = match name {
-            Some(name) => Name::Custom(name),
-            None => Name::Deduced,
-        };
-        let path = utils::expand_path(path)?;
-        Ok(Self { name, path })
-    }
-
-    fn try_into_layout(self, layout_mgr: &LayoutManager) -> Result<Layout> {
-        let layout_name = match self.name {
-            Name::Deduced => LayoutName::try_from_path(&self.path, &layout_mgr),
-            Name::Custom(name) => LayoutName::try_new(name),
-        }
-        .wrap_err("failed to create layout name")?;
-        Ok(Layout::new(layout_name))
-    }
+fn layout_from_options(
+    name: Option<String>,
+    path: PathBuf,
+    layout_mgr: &LayoutManager,
+) -> Result<Layout> {
+    let path = utils::expand_path(path)?;
+    let name = match name {
+        Some(name) => LayoutName::try_new(name)?,
+        None => LayoutName::try_from_path(&path, layout_mgr)?,
+    };
+    Ok(Layout::new(name))
 }
 
 struct LastSessionManger {
@@ -54,6 +34,7 @@ impl LastSessionManger {
     fn new(dir_mgr: Rc<DirectoryManager>) -> Self {
         Self { dir_mgr }
     }
+
     const LAST_SESSION_FILE: &'static str = "last_session";
     fn save(&self, name: &str) -> Result<()> {
         let last_session_path = self.dir_mgr.cache_dir()?.join(Self::LAST_SESSION_FILE);
@@ -104,20 +85,14 @@ impl SessionManager {
             .ok_or_eyre(format!("session not found: {}", name))?)
     }
 
-    pub fn create(&mut self, props: SessionProperties) -> Result<()> {
-        let name = props.name.clone();
-        let layout = props
-            .try_into_layout(&self.layout_mgr)
-            .wrap_err(format!("failed to create layout with name: {name:?}"))?;
+    pub fn create(&mut self, name: Option<String>, path: PathBuf) -> Result<String> {
+        let layout = layout_from_options(name, path, &self.layout_mgr)?;
         let name = layout.tmux_name().to_owned();
         self.layout_mgr
             .create(layout)
             .wrap_err("failed to create layout file")?;
         self.layout_mgr.edit(&name, &self.config)?;
-        io::stdout()
-            .write_all(name.as_bytes())
-            .wrap_err("failed to write the name of the sesssion created to stdout")?;
-        Ok(())
+        Ok(name)
     }
 
     pub fn edit(&self, tmux_name: &str) -> Result<()> {
@@ -174,7 +149,7 @@ impl SessionManager {
 
     fn run(&self, tmux_name: &str) -> Result<()> {
         let layout = self.layout(tmux_name)?;
-        script::mlua::run(layout, &self.dir_mgr.layouts_dir()?).wrap_err(format!(
+        script::run(layout, &self.dir_mgr.layouts_dir()?).wrap_err(format!(
             "an error occured while exucting the layout file: {tmux_name}"
         ))?;
         Ok(())
@@ -183,23 +158,19 @@ impl SessionManager {
     pub fn remove(self, tmux_name: &str) -> Result<()> {
         self.layout_mgr
             .remove(tmux_name)
-            .wrap_err("failed to remove layout with name: {tmux_name}")?;
+            .wrap_err_with(|| format!("failed to remove layout with name: {tmux_name}"))?;
         Ok(())
     }
 
-    pub fn list(&self, options: ListSessionsOptions) -> Result<()> {
-        list_sessions::run(&self.layout_mgr, options)?;
-        Ok(())
+    pub fn list(&self, options: ListSessionsOptions) -> Result<String> {
+        Ok(list_sessions::run(&self.layout_mgr, options)?)
     }
 }
 
 mod list_sessions {
-    use std::io::{self, Write};
-
     use crate::layout::LayoutManager;
     use crate::tmux::Session;
     use color_eyre::Result;
-    use color_eyre::eyre::Context;
     use itertools::Itertools;
 
     pub struct Options {
@@ -223,7 +194,7 @@ mod list_sessions {
     }
 
     // TODO: make a good interface for the functionality
-    pub fn run(layout_mgr: &LayoutManager, opts: Options) -> Result<()> {
+    pub fn run(layout_mgr: &LayoutManager, opts: Options) -> Result<String> {
         let layouts = layout_mgr.list().into_iter().map(ToOwned::to_owned);
         let running_sessions = Session::list_sessions()?;
         let sessions = layouts.chain(running_sessions.clone().into_iter());
@@ -245,10 +216,7 @@ mod list_sessions {
                 true => " ",
                 false => "\n",
             });
-        io::stdout()
-            .write_all(sessions.as_bytes())
-            .wrap_err("failed to write sessions to stdout")?;
-        Ok(())
+        Ok(sessions)
     }
 
     fn exclude(session_name: &str, info: &ExcludeInfo, opts: &Options) -> bool {

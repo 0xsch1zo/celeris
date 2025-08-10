@@ -11,10 +11,12 @@ pub struct Config {
     pub editor: Option<String>,
     #[serde(default = "default_depth")]
     pub depth: usize,
-    #[serde(default = "default_search_subdirs")]
+    #[serde(default)]
     pub search_subdirs: bool,
+    #[serde(default)]
     pub search_roots: Vec<SearchRoot>,
-    pub excludes: Option<Vec<String>>,
+    #[serde(default)]
+    pub excludes: Vec<String>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -29,10 +31,6 @@ pub struct SearchRoot {
     pub path: String,
     pub depth: Option<usize>,
     pub excludes: Option<Vec<String>>,
-}
-
-fn default_search_subdirs() -> bool {
-    false
 }
 
 fn default_depth() -> usize {

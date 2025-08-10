@@ -81,12 +81,6 @@ impl DirectoryManager {
                 ));
             }
         };
-
-        if !path.exists() {
-            fs::create_dir(&path).map_err(|e| {
-                Error::FSOperationFailed("failed to create internals directory".to_owned(), e)
-            })?
-        }
         Ok(path)
     }
 
@@ -114,12 +108,6 @@ impl DirectoryManager {
                 ));
             }
         };
-
-        if self.custom_cache_path.is_some() && !path.exists() {
-            fs::create_dir(&path).map_err(|e| {
-                Error::FSOperationFailed("failed to create cache dir".to_owned(), e)
-            })?;
-        }
         Ok(path)
     }
 }

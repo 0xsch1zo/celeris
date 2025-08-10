@@ -1,10 +1,11 @@
 use clap::Parser;
 use color_eyre::Result;
+use color_eyre::eyre::Context;
 use sesh::cli::{Cli, Commands};
 use sesh::config::Config;
 use sesh::directory_manager::DirectoryManager;
 use sesh::repo_search;
-use sesh::session_manager::{SessionManager, SessionProperties};
+use sesh::session_manager::SessionManager;
 use std::io::{self, Write};
 use std::rc::Rc;
 
@@ -26,17 +27,21 @@ fn main() -> Result<()> {
     let mut session_manager = SessionManager::new(Rc::clone(&config), Rc::new(dir_mgr))?;
 
     match cli.command {
-        Commands::FindRepos => {
-            io::stdout().write_all(repo_search::search(&config)?.join("\n").as_bytes())?
-        }
-        Commands::ListSessions { opts } => session_manager.list(opts.into())?,
-        Commands::NewSession { name, path } => {
-            let props = SessionProperties::try_from(name, path)?;
-            session_manager.create(props)?;
-        }
         Commands::EditSession { name } => session_manager.edit(&name)?,
         Commands::Switch { target } => session_manager.switch(target.into())?,
         Commands::RemoveSession { name } => session_manager.remove(&name)?,
+        _ => {
+            let output = match cli.command {
+                Commands::FindRepos => repo_search::search(&config)?.join("\n"),
+                Commands::NewSession { name, path } => session_manager.create(name, path)?,
+                Commands::ListSessions { opts } => session_manager.list(opts.into())?,
+                _ => unreachable!(),
+            };
+
+            io::stdout()
+                .write_all(output.as_bytes())
+                .wrap_err("failed to write result of subcommand to stdout")?
+        }
     }
     Ok(())
 }

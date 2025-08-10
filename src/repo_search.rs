@@ -5,11 +5,6 @@ use std::path::{Path, PathBuf};
 use walkdir::{DirEntry, WalkDir};
 
 pub fn search(config: &Config) -> Result<Vec<String>> {
-    let global_excludes = config
-        .excludes
-        .clone() // for sanity purposes
-        .unwrap_or(Vec::<String>::new());
-
     //let mut manager = RepoManager::new();
     let mut repos: Vec<PathBuf> = Vec::new();
     // Side-effects were needed
@@ -20,7 +15,7 @@ pub fn search(config: &Config) -> Result<Vec<String>> {
             .max_depth(root.depth.unwrap_or(config.depth))
             .into_iter()
             .filter_entry(|entry| {
-                if is_excluded_from(&global_excludes, entry)
+                if is_excluded_from(&config.excludes, entry)
                     || is_excluded_from(&local_excludes, entry)
                 {
                     return false;
