@@ -59,15 +59,16 @@ pub struct SplitOptions {
 }
 
 impl SplitOptions {
-    fn into_builder(
+    fn try_into_builder(
         self,
         sibling_pane: Arc<tmux::Pane>,
         direction: Direction,
-    ) -> tmux::SplitBuilder {
-        sibling_pane
+    ) -> Result<tmux::SplitBuilder> {
+        Ok(sibling_pane
             .split(direction.into())
-            .builder_transform(self.root, tmux::SplitBuilder::root)
-            .builder_transform(self.size.map(|s| s.into()), tmux::SplitBuilder::size)
+            .try_builder_transform(self.root, tmux::SplitBuilder::root)
+            .into_interop()?
+            .builder_transform(self.size.map(|s| s.into()), tmux::SplitBuilder::size))
     }
 }
 
@@ -91,7 +92,7 @@ impl Pane {
 
     fn split(_: &Lua, this: &Self, (direction, opts): (Direction, SplitOptions)) -> Result<Pane> {
         let inner = opts
-            .into_builder(Arc::clone(&this.inner), direction)
+            .try_into_builder(Arc::clone(&this.inner), direction)?
             .build()
             .into_interop()?;
         Ok(Pane::new(Arc::new(inner)))

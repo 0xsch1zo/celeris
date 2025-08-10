@@ -76,9 +76,34 @@ enum TerminalState {
 }
 
 #[derive(Clone, Debug)]
-pub enum Root {
+enum RootOptions {
     Default,
     Custom(PathBuf),
+}
+
+#[derive(Debug)]
+pub struct Root(RootOptions);
+
+impl Root {
+    pub fn custom(path: PathBuf) -> Result<Self> {
+        if path.exists() {
+            return Err(eyre!("Root path doesn't exist: {path:?}"));
+        }
+
+        Ok(Self(RootOptions::Custom(path)))
+    }
+}
+
+impl Default for Root {
+    fn default() -> Self {
+        Self(RootOptions::Default)
+    }
+}
+
+impl AsRef<RootOptions> for Root {
+    fn as_ref(&self) -> &RootOptions {
+        &self.0
+    }
 }
 
 trait Target {
@@ -206,7 +231,7 @@ fn target_exists<T: Target>(target: &T) -> Result<bool> {
 }
 
 pub trait BuilderTransform: Sized {
-    fn try_buider_transform<T, Tr, E>(self, opt: Option<T>, transformer: Tr) -> Result<Self, E>
+    fn try_builder_transform<T, Tr, E>(self, opt: Option<T>, transformer: Tr) -> Result<Self, E>
     where
         Tr: FnOnce(Self, T) -> Result<Self, E>,
     {

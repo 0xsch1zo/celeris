@@ -1,3 +1,4 @@
+use crate::tmux::RootOptions;
 use crate::tmux::{
     self, Root, SessionTarget, TerminalState, TmuxExecuteExt, WindowTarget, tmux,
     window::WindowCore,
@@ -24,21 +25,21 @@ impl SessionBuilder {
     const OUTPUT_DELIM: &str = "|";
     pub fn new(session_name: String) -> Self {
         Self {
-            root: Root::Default,
+            root: Root::default(),
             session_name,
         }
     }
 
-    pub fn root(&mut self, path: PathBuf) -> Result<&mut Self> {
-        if !path.exists() {
-            return Err(eyre!(
-                "session: {}: root doesn't exist: {path:?}",
-                self.session_name
-            ));
-        }
-
-        self.root = Root::Custom(path);
-        Ok(self)
+    pub fn root(self, path: PathBuf) -> Result<Self> {
+        Ok(Self {
+            root: Root::custom(path.clone()).wrap_err_with(|| {
+                format!(
+                    "session root for session: {} is invalid: {path:?}",
+                    &self.session_name
+                )
+            })?,
+            ..self
+        })
     }
 
     fn prepare(&self) -> Result<Command> {
@@ -64,7 +65,7 @@ impl SessionBuilder {
     }
 
     fn prepare_root(&self, command: &mut Command) -> Result<()> {
-        if let Root::Custom(root) = &self.root {
+        if let RootOptions::Custom(root) = self.root.as_ref() {
             command.args(["-c", &utils::path_to_string(root)?]);
         }
         Ok(())

@@ -12,9 +12,7 @@ git2 = "0.20.2"
 color-eyre = "0.6.5"
 md5 = "0.7.0"
 itertools = "0.14.0"
-rhai = { version = "1.22.2", features = ["sync"] }
 clap = { version = "4.5.40", features = ["derive", "env"] }
-serde_with = "3.14.0"
 delegate = "0.13.4"
 ref-cast = "1.0.24"
 sanitize-filename = "0.6.0"

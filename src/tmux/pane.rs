@@ -1,4 +1,4 @@
-use crate::tmux::{self, PaneTarget, Root, TmuxExecuteExt};
+use crate::tmux::{self, PaneTarget, Root, RootOptions, TmuxExecuteExt};
 use crate::utils;
 use color_eyre::{Result, eyre::eyre};
 use std::path::PathBuf;
@@ -28,7 +28,7 @@ impl SplitBuilder {
         Self {
             direction: direction,
             size: None,
-            root: Root::Default,
+            root: Root::default(),
             sibling_target,
         }
     }
@@ -40,11 +40,11 @@ impl SplitBuilder {
         }
     }
 
-    pub fn root(self, path: PathBuf) -> Self {
-        Self {
-            root: Root::Custom(path),
+    pub fn root(self, path: PathBuf) -> Result<Self> {
+        Ok(Self {
+            root: Root::custom(path)?,
             ..self
-        }
+        })
     }
 
     fn prepare_options(&self) -> Result<Vec<String>> {
@@ -75,7 +75,7 @@ impl SplitBuilder {
     }
 
     fn prepare_root(&self, options: &mut Vec<String>) -> Result<()> {
-        let Root::Custom(path) = &self.root else {
+        let RootOptions::Custom(path) = self.root.as_ref() else {
             return Ok(());
         };
 
@@ -167,7 +167,7 @@ mod tests {
         let pane = window
             .default_pane()
             .split(Direction::Vertical)
-            .root(env::temp_dir())
+            .root(env::temp_dir())?
             .build()?;
         let output = tmux::targeted_command(&pane.target, "display-message")?
             .args(["-p", "#{pane_current_path}"])

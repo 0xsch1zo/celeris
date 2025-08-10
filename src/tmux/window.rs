@@ -1,5 +1,5 @@
 use crate::tmux::{
-    self, PaneTarget, Root, Target, TmuxExecuteExt, WindowTarget,
+    self, PaneTarget, Root, RootOptions, Target, TmuxExecuteExt, WindowTarget,
     pane::{self, Direction, Pane},
     session::{self, Session},
 };
@@ -8,7 +8,7 @@ use color_eyre::{Result, eyre::OptionExt};
 use std::path::PathBuf;
 use std::sync::Arc;
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct WindowBuilder {
     name: Option<String>,
     shell_command: Option<String>,
@@ -21,7 +21,7 @@ impl WindowBuilder {
         Self {
             name: None,
             shell_command: None,
-            root: Root::Default,
+            root: Root::default(),
             session,
         }
     }
@@ -33,11 +33,11 @@ impl WindowBuilder {
         }
     }
 
-    pub fn root(self, path: PathBuf) -> Self {
-        Self {
-            root: Root::Custom(path),
+    pub fn root(self, path: PathBuf) -> Result<Self> {
+        Ok(Self {
+            root: Root::custom(path)?,
             ..self
-        }
+        })
     }
 
     pub fn raw_command(self, command: String) -> Self {
@@ -72,7 +72,7 @@ impl WindowBuilder {
     }
 
     fn prepare_root(&self, options: &mut Vec<String>) -> Result<()> {
-        let Root::Custom(path) = &self.root else {
+        let RootOptions::Custom(path) = self.root.as_ref() else {
             return Ok(());
         };
         options.extend(["-c".to_owned(), utils::path_to_string(path)?]);
@@ -224,7 +224,7 @@ mod tests {
     #[test]
     fn new_window_custom_path() -> Result<()> {
         let session = testing_session()?;
-        let window = Window::builder(&session).root(env::temp_dir()).build()?;
+        let window = Window::builder(&session).root(env::temp_dir())?.build()?;
 
         let output = tmux::targeted_command(&window.window_core.target, "display-message")?
             .args(["-p", "#{pane_current_path}"])
@@ -273,7 +273,7 @@ mod tests {
         let command = format!("'{real_command}'"); // to ignore aliases
         let window = Window::builder(&session)
             .name("testt".to_owned())
-            .root(env::temp_dir())
+            .root(env::temp_dir())?
             .raw_command(command)
             .build()?;
         thread::sleep(Duration::from_secs(1));

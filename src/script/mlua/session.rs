@@ -1,5 +1,5 @@
-use crate::script::mlua::IntoInteropResExt;
 use crate::tmux;
+use crate::{script::mlua::IntoInteropResExt, tmux::BuilderTransform};
 use color_eyre::eyre::WrapErr;
 use mlua::{FromLua, Lua, LuaSerdeExt, Result, Table, UserData, UserDataMethods, Value};
 use serde::{Deserialize, Serialize};
@@ -12,11 +12,9 @@ struct SessionOptions {
 
 impl SessionOptions {
     fn try_into_builder(self, session_name: String) -> Result<tmux::SessionBuilder> {
-        let mut builder = tmux::SessionBuilder::new(session_name);
-        if let Some(root) = self.root {
-            builder.root(root).into_interop()?;
-        }
-        Ok(builder)
+        Ok(tmux::SessionBuilder::new(session_name)
+            .try_builder_transform(self.root, tmux::SessionBuilder::root)
+            .into_interop()?)
     }
 }
 

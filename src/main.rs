@@ -8,7 +8,6 @@ use sesh::session_manager::{SessionManager, SessionProperties};
 use std::io::{self, Write};
 use std::rc::Rc;
 
-// TODO: figure out if you can do some ast parsing on layout files to check if build was called
 fn main() -> Result<()> {
     color_eyre::config::HookBuilder::default()
         .display_env_section(false)

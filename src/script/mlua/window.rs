@@ -13,16 +13,16 @@ use std::sync::Arc;
 pub struct WindowOptions {
     name: Option<String>,
     root: Option<PathBuf>,
-    // FIXME
     raw_command: Option<String>,
 }
 
 impl WindowOptions {
-    fn into_builder(self, session: Arc<tmux::Session>) -> tmux::WindowBuilder {
-        tmux::WindowBuilder::new(session)
+    fn try_into_builder(self, session: Arc<tmux::Session>) -> Result<tmux::WindowBuilder> {
+        Ok(tmux::WindowBuilder::new(session)
             .builder_transform(self.name, tmux::WindowBuilder::name)
-            .builder_transform(self.root, tmux::WindowBuilder::root)
-            .builder_transform(self.raw_command, tmux::WindowBuilder::raw_command)
+            .try_builder_transform(self.root, tmux::WindowBuilder::root)
+            .into_interop()?
+            .builder_transform(self.raw_command, tmux::WindowBuilder::raw_command))
     }
 }
 
@@ -41,7 +41,7 @@ pub struct Window {
 
 impl Window {
     fn try_new(_: &Lua, (session, opts): (Session, WindowOptions)) -> Result<Window> {
-        let builder = opts.into_builder(session.inner());
+        let builder = opts.try_into_builder(session.inner())?;
         Ok(Self {
             inner: Arc::new(builder.build().into_interop()?),
         })
