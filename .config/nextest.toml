@@ -1,6 +1,11 @@
 [test-groups]
 tmux = { max-threads = 1 }
+integration = { max-threads = 1 }
 
 [[profile.default.overrides]]
 filter = "test(tmux::)"
 test-group = "tmux"
+
+[[profile.default.overrides]]
+filter = "binary(session_manager)"
+test-group = "integration"

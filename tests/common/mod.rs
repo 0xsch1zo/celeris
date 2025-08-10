@@ -1,0 +1,96 @@
+use color_eyre::{Result, eyre::Context};
+use delegate::delegate;
+use itertools::Itertools;
+use sesh::{config::Config, directory_manager::DirectoryManager, session_manager::SessionManager};
+use std::{
+    env,
+    fs::{self, File},
+    path::PathBuf,
+    rc::Rc,
+};
+
+pub struct TestDirectoryManager(Rc<DirectoryManager>);
+
+impl TestDirectoryManager {
+    fn testing_dir() -> PathBuf {
+        env::temp_dir().join("sesh_test")
+    }
+
+    pub fn new() -> Result<Self> {
+        let testing_dir = Self::testing_dir();
+        fs::create_dir(&testing_dir).wrap_err("failed to create main test dir")?;
+
+        let cache_dir = testing_dir.join("cache");
+        fs::create_dir(&cache_dir).wrap_err("failed to create cache dir")?;
+
+        let config_dir = testing_dir.join("config");
+        fs::create_dir(&config_dir).wrap_err("failed to create config dir")?;
+
+        let mut directory_manager = DirectoryManager::new();
+        directory_manager
+            .set_cache_dir(cache_dir)?
+            .set_config_dir(config_dir)?;
+
+        let dir_mgr = Self(Rc::new(directory_manager));
+
+        let repo_dir = dir_mgr.repo_dir();
+        fs::create_dir(&repo_dir).wrap_err("failed to create repo dir")?;
+
+        Ok(dir_mgr)
+    }
+
+    pub fn repo_dir(&self) -> PathBuf {
+        Self::testing_dir().join("repos")
+    }
+
+    pub fn inner(&self) -> &Rc<DirectoryManager> {
+        &self.0
+    }
+
+    delegate! {
+        to self.0 {
+            #[expr(Ok($?))]
+            pub fn config_dir(&self) -> Result<PathBuf>;
+            #[expr(Ok($?))]
+            pub fn cache_dir(&self) -> Result<PathBuf>;
+            #[expr(Ok($?))]
+            pub fn layouts_dir(&self) -> Result<PathBuf>;
+        }
+    }
+}
+
+impl Drop for TestDirectoryManager {
+    fn drop(&mut self) {
+        println!("cleanup");
+        fs::remove_dir_all(Self::testing_dir()).expect("Failed to remove testing directory")
+    }
+}
+
+impl AsRef<DirectoryManager> for TestDirectoryManager {
+    fn as_ref(&self) -> &DirectoryManager {
+        &self.0
+    }
+}
+
+pub fn test_session_manager(dir_mgr: Rc<DirectoryManager>) -> Result<SessionManager> {
+    let config = Rc::new(create_dummy_config(&dir_mgr)?);
+    Ok(SessionManager::new(config, dir_mgr)?)
+}
+
+pub fn create_dummy_layouts(names: &[&str], dir_mgr: &DirectoryManager) -> Result<()> {
+    let _: Vec<_> = names
+        .into_iter()
+        .map(|name| -> Result<File> {
+            Ok(File::create_new(
+                dir_mgr.layouts_dir()?.join(name).with_extension("lua"),
+            )?)
+        })
+        .try_collect()?;
+    Ok(())
+}
+
+pub fn create_dummy_config(dir_mgr: &DirectoryManager) -> Result<Config> {
+    let path = dir_mgr.config_dir()?.join("config.toml");
+    File::create_new(path).wrap_err("failed to create dummy config")?;
+    Config::new(dir_mgr)
+}
