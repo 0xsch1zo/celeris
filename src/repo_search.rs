@@ -32,7 +32,8 @@ pub fn search(config: &Config) -> Result<Vec<String>> {
 
     Ok(repos
         .into_iter()
-        .map(|r| Ok(utils::shorten_path_string(r.as_path())?))
+        .map(utils::shorten_path)
+        .map(|p| utils::path_to_string(p.as_path()))
         .collect::<Result<Vec<_>>>()?)
 }
 

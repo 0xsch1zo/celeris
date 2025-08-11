@@ -3,8 +3,13 @@ mod common;
 use color_eyre::{Result, eyre::Context};
 use common::TestDirectoryManager;
 use git2::Repository;
+use itertools::Itertools;
 use sesh::{config::Config, repo_search, session_manager::ListSessionsOptions};
-use std::{fs, rc::Rc};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+    rc::Rc,
+};
 
 #[test]
 fn list_sessions() -> Result<()> {
@@ -59,10 +64,12 @@ path = "{}"
     fs::write(config_path, config.as_bytes()).wrap_err("failed to write test config")?;
     let config = Config::new(dir_mgr.as_ref())?;
 
-    let given_repos = ["test1", "test2", "test3"].map(ToOwned::to_owned);
+    let given_repos = ["test1", "test2", "test3"]
+        .map(ToOwned::to_owned)
+        .map(|repo_name| dir_mgr.repo_dir().join(repo_name));
+
     given_repos
         .iter()
-        .map(|repo_name| dir_mgr.repo_dir().join(repo_name))
         .map(|path| {
             Repository::init(path)?;
             Ok(())
@@ -70,7 +77,7 @@ path = "{}"
         .collect::<Result<()>>()?;
 
     let repos = repo_search::search(&config)?;
-    println!("{}", repos.join("\n"));
-    assert_eq!(repos.iter().eq(given_repos.iter()), true);
+    let repos = repos.into_iter().map(PathBuf::from).collect_vec();
+    assert_eq!(given_repos.iter().all(|r| repos.contains(r)), true);
     Ok(())
 }

@@ -28,15 +28,13 @@ pub fn path_to_string(path: &Path) -> Result<String> {
 }
 
 // FIXME
-pub fn shorten_path_string(path: &Path) -> Result<String> {
-    let path = match dirs::home_dir() {
-        Some(home) if path.starts_with(&home) => path.strip_prefix(home).unwrap(),
-        _ => path,
-    };
-    Ok("~/".to_owned()
-        + path
-            .to_str()
-            .ok_or_eyre(format!("Invalid utf-8 encoding of path: {path:?}"))?)
+pub fn shorten_path(path: PathBuf) -> PathBuf {
+    match dirs::home_dir() {
+        Some(home) if path.starts_with(&home) => {
+            Path::new("~").join(path.strip_prefix(home).unwrap())
+        }
+        _ => path.to_owned(),
+    }
 }
 
 pub fn expand_path(mut path: PathBuf) -> Result<PathBuf> {
