@@ -6,10 +6,10 @@ use std::{
     env,
     fs::{self, File},
     path::PathBuf,
-    rc::Rc,
+    sync::Arc,
 };
 
-pub struct TestDirectoryManager(Rc<DirectoryManager>);
+pub struct TestDirectoryManager(Arc<DirectoryManager>);
 
 impl TestDirectoryManager {
     fn testing_dir() -> PathBuf {
@@ -31,7 +31,7 @@ impl TestDirectoryManager {
             .set_cache_dir(cache_dir)?
             .set_config_dir(config_dir)?;
 
-        let dir_mgr = Self(Rc::new(directory_manager));
+        let dir_mgr = Self(Arc::new(directory_manager));
 
         let repo_dir = dir_mgr.repo_dir();
         fs::create_dir(&repo_dir).wrap_err("failed to create repo dir")?;
@@ -43,7 +43,7 @@ impl TestDirectoryManager {
         Self::testing_dir().join("repos")
     }
 
-    pub fn inner(&self) -> &Rc<DirectoryManager> {
+    pub fn inner(&self) -> &Arc<DirectoryManager> {
         &self.0
     }
 
@@ -61,7 +61,6 @@ impl TestDirectoryManager {
 
 impl Drop for TestDirectoryManager {
     fn drop(&mut self) {
-        println!("cleanup");
         fs::remove_dir_all(Self::testing_dir()).expect("Failed to remove testing directory")
     }
 }
@@ -72,8 +71,8 @@ impl AsRef<DirectoryManager> for TestDirectoryManager {
     }
 }
 
-pub fn test_session_manager(dir_mgr: Rc<DirectoryManager>) -> Result<SessionManager> {
-    let config = Rc::new(create_dummy_config(&dir_mgr)?);
+pub fn test_session_manager(dir_mgr: Arc<DirectoryManager>) -> Result<SessionManager> {
+    let config = Arc::new(create_dummy_config(&dir_mgr)?);
     Ok(SessionManager::new(config, dir_mgr)?)
 }
 

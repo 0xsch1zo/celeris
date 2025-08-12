@@ -1,22 +1,24 @@
 mod common;
 
+use color_eyre::eyre::eyre;
 use color_eyre::{Result, eyre::Context};
 use common::TestDirectoryManager;
 use git2::Repository;
 use itertools::Itertools;
+use sesh::layout;
 use sesh::{config::Config, repo_search, session_manager::ListSessionsOptions};
-use std::{
-    fs,
-    path::{Path, PathBuf},
-    rc::Rc,
-};
+use std::fs::File;
+use std::sync::{Arc, Mutex, mpsc};
+use std::thread;
+use std::time::{Duration, Instant};
+use std::{fs, path::PathBuf};
 
 #[test]
 fn list_sessions() -> Result<()> {
     let dir_mgr = TestDirectoryManager::new()?;
     let dummy_layouts = ["test1", "test2", "test3"];
     common::create_dummy_layouts(&dummy_layouts, dir_mgr.as_ref())?;
-    let session_manager = common::test_session_manager(Rc::clone(dir_mgr.inner()))?;
+    let session_manager = common::test_session_manager(Arc::clone(dir_mgr.inner()))?;
 
     let opts = ListSessionsOptions {
         tmux_format: false,
@@ -36,7 +38,7 @@ fn list_sessions() -> Result<()> {
 fn remove_session() -> Result<()> {
     let dir_mgr = TestDirectoryManager::new()?;
     common::create_dummy_layouts(&["test"], dir_mgr.as_ref())?;
-    let session_manager = common::test_session_manager(Rc::clone(dir_mgr.inner()))?;
+    let session_manager = common::test_session_manager(Arc::clone(dir_mgr.inner()))?;
     let layout_path = dir_mgr
         .as_ref()
         .layouts_dir()?
@@ -80,4 +82,36 @@ path = "{}"
     let repos = repos.into_iter().map(PathBuf::from).collect_vec();
     assert_eq!(given_repos.iter().all(|r| repos.contains(r)), true);
     Ok(())
+}
+
+#[test]
+fn new_session() -> Result<()> {
+    let dir_mgr = TestDirectoryManager::new()?;
+    let session_manager = Mutex::new(common::test_session_manager(Arc::clone(dir_mgr.inner()))?);
+    let layout_path = dir_mgr.layouts_dir()?.join("test");
+    File::create_new(&layout_path).wrap_err("failed to create layout's target")?;
+    let layout_path_c = layout_path.clone();
+    let (err_tx, err_rx) = mpsc::channel();
+
+    thread::spawn(move || {
+        let result = session_manager.lock().unwrap().create(None, layout_path);
+        err_tx.send(result).unwrap();
+    });
+
+    let start = Instant::now();
+    let wait_time = Duration::from_millis(300);
+    while start.elapsed() < wait_time {
+        if layout_path_c.exists() {
+            return Ok(());
+        }
+
+        let result = err_rx.try_recv();
+        if result.is_ok() {
+            return Err(result
+                .unwrap()
+                .expect_err("non error value sent through channel"));
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
+    Err(eyre!("layout file hasn't been created after {wait_time:?}"))
 }

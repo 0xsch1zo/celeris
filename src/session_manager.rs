@@ -11,7 +11,7 @@ use color_eyre::eyre::OptionExt;
 use color_eyre::eyre::WrapErr;
 use std::fs;
 use std::path::PathBuf;
-use std::rc::Rc;
+use std::sync::Arc;
 
 fn layout_from_options(
     name: Option<String>,
@@ -26,24 +26,18 @@ fn layout_from_options(
     Ok(Layout::new(name))
 }
 
-struct LastSessionManger {
-    dir_mgr: Rc<DirectoryManager>,
-}
+struct LastSessionManager;
 
-impl LastSessionManger {
-    fn new(dir_mgr: Rc<DirectoryManager>) -> Self {
-        Self { dir_mgr }
-    }
-
+impl LastSessionManager {
     const LAST_SESSION_FILE: &'static str = "last_session";
-    fn save(&self, name: &str) -> Result<()> {
-        let last_session_path = self.dir_mgr.cache_dir()?.join(Self::LAST_SESSION_FILE);
+    fn save(dir_mgr: &DirectoryManager, name: &str) -> Result<()> {
+        let last_session_path = dir_mgr.cache_dir()?.join(Self::LAST_SESSION_FILE);
         fs::write(last_session_path, name).wrap_err("failed to save the last session")?;
         Ok(())
     }
 
-    fn get(&self) -> Result<Option<String>> {
-        let last_session_path = self.dir_mgr.cache_dir()?.join(Self::LAST_SESSION_FILE);
+    fn get(dir_mgr: &DirectoryManager) -> Result<Option<String>> {
+        let last_session_path = dir_mgr.cache_dir()?.join(Self::LAST_SESSION_FILE);
         if !last_session_path.exists() {
             return Ok(None);
         }
@@ -63,18 +57,16 @@ pub use list_sessions::Options as ListSessionsOptions;
 
 pub struct SessionManager {
     layout_mgr: LayoutManager,
-    config: Rc<Config>,
-    last_session_mgr: LastSessionManger,
-    dir_mgr: Rc<DirectoryManager>,
+    config: Arc<Config>,
+    dir_mgr: Arc<DirectoryManager>,
 }
 
 impl SessionManager {
-    pub fn new(config: Rc<Config>, dir_mgr: Rc<DirectoryManager>) -> Result<Self> {
+    pub fn new(config: Arc<Config>, dir_mgr: Arc<DirectoryManager>) -> Result<Self> {
         Ok(Self {
             config,
             layout_mgr: LayoutManager::new(dir_mgr.layouts_dir()?)?,
-            last_session_mgr: LastSessionManger::new(Rc::clone(&dir_mgr)),
-            dir_mgr: dir_mgr,
+            dir_mgr,
         })
     }
 
@@ -92,7 +84,7 @@ impl SessionManager {
             .create(layout)
             .wrap_err("failed to create layout file")?;
         self.layout_mgr.edit(&name, &self.config)?;
-        Ok(name)
+        Ok(name) // TODO: maybe return a message
     }
 
     pub fn edit(&self, tmux_name: &str) -> Result<()> {
@@ -109,10 +101,7 @@ impl SessionManager {
     }
 
     fn switch_last(&self) -> Result<()> {
-        let last = self
-            .last_session_mgr
-            .get()?
-            .ok_or_eyre("no last session saved")?;
+        let last = LastSessionManager::get(&self.dir_mgr)?.ok_or_eyre("no last session saved")?;
         self.switch_core(&last)?;
         Ok(())
     }
@@ -126,8 +115,7 @@ impl SessionManager {
         }
 
         let running_sessions = Self::running_sessions(active_session.as_ref())?;
-        self.last_session_mgr
-            .save(&tmux_name)
+        LastSessionManager::save(&self.dir_mgr, &tmux_name)
             .wrap_err("failed to save session name for later use")?;
         if running_sessions.contains(&tmux_name) {
             let session = Session::from(&tmux_name)?;

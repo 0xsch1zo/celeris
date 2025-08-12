@@ -27,7 +27,6 @@ pub fn path_to_string(path: &Path) -> Result<String> {
         .to_string())
 }
 
-// FIXME
 pub fn shorten_path(path: PathBuf) -> PathBuf {
     match dirs::home_dir() {
         Some(home) if path.starts_with(&home) => {

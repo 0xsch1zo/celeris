@@ -7,7 +7,7 @@ use sesh::directory_manager::DirectoryManager;
 use sesh::repo_search;
 use sesh::session_manager::SessionManager;
 use std::io::{self, Write};
-use std::rc::Rc;
+use std::sync::Arc;
 
 fn main() -> Result<()> {
     color_eyre::config::HookBuilder::default()
@@ -23,8 +23,8 @@ fn main() -> Result<()> {
         dir_mgr.set_cache_dir(cache_dir)?;
     }
 
-    let config = Rc::new(Config::new(&dir_mgr)?);
-    let mut session_manager = SessionManager::new(Rc::clone(&config), Rc::new(dir_mgr))?;
+    let config = Arc::new(Config::new(&dir_mgr)?);
+    let mut session_manager = SessionManager::new(Arc::clone(&config), Arc::new(dir_mgr))?;
 
     match cli.command {
         Commands::EditSession { name } => session_manager.edit(&name)?,
