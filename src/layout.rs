@@ -3,12 +3,13 @@ mod core;
 use clap::builder::OsStr;
 use core::ExtractLayoutsIterator;
 use delegate::delegate;
+use handlebars::{Handlebars, RenderError};
 use itertools::Itertools;
 use ref_cast::RefCast;
+use serde::Serialize;
 use std::env::VarError;
 use std::ffi::OsString;
 use std::fmt::Display;
-use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::{env, io};
@@ -27,6 +28,7 @@ pub enum Error {
     NotFound(String),
     EditorNotFound,
     EditorInvalid(OsString),
+    TemplateRenderError(String, RenderError),
 }
 
 impl Display for Error {
@@ -44,6 +46,9 @@ impl Display for Error {
             Self::EditorInvalid(invalid_text) => {
                 format!("$EDITOR contains invalid unicode: {invalid_text:?}")
             }
+            Self::TemplateRenderError(comment, _) => {
+                format!("Failed to render layout template: {comment}")
+            }
         };
         write!(f, "{message}")
     }
@@ -56,6 +61,7 @@ impl error::Error for Error {
             Self::CoreError(e) => Some(&**e),
             Self::InvalidDirEntry(e) => Some(&**e),
             Self::FailedCommand(_, e) => Some(e),
+            Self::TemplateRenderError(_, e) => Some(e),
             _ => None,
         }
     }
@@ -162,8 +168,9 @@ impl LayoutManager {
         }
     }
 
-    pub fn create(&mut self, layout: Layout) -> Result<(), Error> {
-        File::create_new(&layout.storage_path(&self.layouts_dir)).map_err(|e| {
+    pub fn create(&mut self, layout: Layout, root: &Path) -> Result<(), Error> {
+        let template = template(TemplateData::new(layout.tmux_name(), &root))?;
+        fs::write(&layout.storage_path(&self.layouts_dir), template).map_err(|e| {
             Error::FSOperationFaiure(
                 format!(
                     "failed to create layout with tmux_name: {}",
@@ -215,4 +222,27 @@ impl LayoutManager {
             .map_err(|e| Error::FailedCommand(editor, e))?;
         Ok(())
     }
+}
+
+#[derive(Serialize)]
+pub struct TemplateData<'a> {
+    session_root: &'a Path,
+    session_name: &'a str,
+}
+
+impl<'a> TemplateData<'a> {
+    pub fn new(session_name: &'a str, session_root: &'a Path) -> Self {
+        Self {
+            session_root,
+            session_name,
+        }
+    }
+}
+
+fn template(data: TemplateData) -> Result<String, Error> {
+    let handlbars = Handlebars::new();
+    let template = include_str!("../templates/default.lua");
+    Ok(handlbars.render_template(template, &data).map_err(|e| {
+        Error::TemplateRenderError("failed to render default layout template".to_owned(), e)
+    })?)
 }

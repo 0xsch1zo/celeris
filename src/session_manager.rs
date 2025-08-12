@@ -18,7 +18,6 @@ fn layout_from_options(
     path: PathBuf,
     layout_mgr: &LayoutManager,
 ) -> Result<Layout> {
-    let path = utils::expand_path(path)?;
     let name = match name {
         Some(name) => LayoutName::try_new(name)?,
         None => LayoutName::try_from_path(&path, layout_mgr)?,
@@ -78,10 +77,11 @@ impl SessionManager {
     }
 
     pub fn create(&mut self, name: Option<String>, path: PathBuf) -> Result<String> {
-        let layout = layout_from_options(name, path, &self.layout_mgr)?;
+        let path = utils::expand_path(path)?;
+        let layout = layout_from_options(name, path.clone(), &self.layout_mgr)?;
         let name = layout.tmux_name().to_owned();
         self.layout_mgr
-            .create(layout)
+            .create(layout, &path)
             .wrap_err("failed to create layout file")?;
         self.layout_mgr.edit(&name, &self.config)?;
         Ok(name) // TODO: maybe return a message

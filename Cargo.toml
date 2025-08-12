@@ -17,6 +17,7 @@ delegate = "0.13.4"
 ref-cast = "1.0.24"
 sanitize-filename = "0.6.0"
 mlua = { version = "0.11.1", features = ["luajit", "userdata-wrappers", "error-send", "serde", "macros"] }
+handlebars = "6.3.2"
 
 [dev-dependencies]
 test-with = "0.15.2"
