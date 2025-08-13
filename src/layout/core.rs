@@ -44,6 +44,7 @@ impl std::error::Error for Error {
 #[derive(Debug)]
 pub struct LayoutName(String);
 
+// FIXME: names with _ have a bug
 impl LayoutName {
     const STORAGE_NAME_DELIMETER: &str = "_";
     const TMUX_NAME_DELIMETER: &str = "/";

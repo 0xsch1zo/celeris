@@ -1,11 +1,13 @@
 use crate::tmux;
-use crate::{script::IntoInteropResExt, tmux::BuilderTransform};
+use crate::tmux::BuilderTransform;
 use color_eyre::eyre::WrapErr;
-use mlua::{FromLua, Lua, LuaSerdeExt, Result, Table, UserData, UserDataMethods, Value};
+use mlua::{
+    ExternalResult, FromLua, Lua, LuaSerdeExt, Result, Table, UserData, UserDataMethods, Value,
+};
 use serde::{Deserialize, Serialize};
 use std::{path::PathBuf, sync::Arc};
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, Debug)]
 struct SessionOptions {
     root: Option<PathBuf>,
 }
@@ -14,7 +16,7 @@ impl SessionOptions {
     fn try_into_builder(self, session_name: String) -> Result<tmux::SessionBuilder> {
         Ok(tmux::SessionBuilder::new(session_name)
             .try_builder_transform(self.root, tmux::SessionBuilder::root)
-            .into_interop()?)
+            .into_lua_err()?)
     }
 }
 
@@ -22,9 +24,10 @@ impl UserData for SessionOptions {}
 
 impl FromLua for SessionOptions {
     fn from_lua(value: Value, lua: &Lua) -> Result<Self> {
-        lua.from_value::<Self>(value)
+        lua.from_value(value)
     }
 }
+
 // wrapper around tmux::Session
 #[derive(Clone, Debug, FromLua)]
 pub struct Session {
@@ -36,13 +39,13 @@ impl Session {
         let session_name: String = ctx
             .named_registry_value("SESH_SESSION_NAME")
             .wrap_err("failed to get session name from the lua registry")
-            .into_interop()?;
+            .into_lua_err()?;
 
         Ok(Self {
             inner: opts
                 .try_into_builder(session_name)?
                 .build()
-                .into_interop()?,
+                .into_lua_err()?,
         })
     }
 
@@ -51,7 +54,7 @@ impl Session {
     }
 
     fn attach(_: &Lua, this: &mut Self, _: ()) -> Result<()> {
-        this.inner.attach().into_interop()?;
+        this.inner.attach().into_lua_err()?;
         Ok(())
     }
 }
@@ -66,4 +69,49 @@ impl UserData for Session {
 pub fn register(ctx: &Lua, api: &mut Table) -> Result<()> {
     api.set("Session", ctx.create_proxy::<Session>()?)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{env, path::PathBuf};
+
+    use handlebars::Handlebars;
+    use mlua::{ExternalResult, Lua, LuaSerdeExt, Result};
+    use serde::Serialize;
+
+    use crate::{script::session::SessionOptions, tmux};
+
+    #[derive(Serialize)]
+    struct OptData {
+        root: PathBuf,
+    }
+
+    #[test]
+    fn session_options() -> Result<()> {
+        let lua = Lua::new();
+        let handlebars = Handlebars::new();
+        let opt_data = OptData {
+            root: env::temp_dir(),
+        };
+        let given_opts: Vec<_> = ["{ root = \"{{root}}\" }", "{}"]
+            .into_iter()
+            .map(|opt| handlebars.render_template(opt, &opt_data).into_lua_err())
+            .map(|opt| lua.from_value::<SessionOptions>(lua.load(opt?).eval()?))
+            .collect::<Result<Vec<_>>>()?;
+
+        let got_builders = given_opts
+            .into_iter()
+            .map(|opt| opt.try_into_builder("test".to_owned()))
+            .collect::<Result<Vec<_>>>()?;
+
+        let expected_builders = vec![
+            tmux::SessionBuilder::new("test".to_owned())
+                .root(opt_data.root)
+                .into_lua_err()?,
+            tmux::SessionBuilder::new("test".to_owned()),
+        ];
+
+        assert_eq!(expected_builders, got_builders);
+        Ok(())
+    }
 }

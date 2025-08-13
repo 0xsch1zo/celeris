@@ -2,34 +2,11 @@ mod pane;
 mod session;
 mod window;
 
-use color_eyre::{Report, eyre};
+use color_eyre::eyre;
 use mlua::Lua;
 use std::path::Path;
 
 use crate::layout::Layout;
-struct Error(Report);
-
-impl From<Report> for Error {
-    fn from(value: Report) -> Self {
-        Error(value)
-    }
-}
-
-trait IntoInteropResExt<T> {
-    fn into_interop(self) -> Result<T, Error>;
-}
-
-impl<T> IntoInteropResExt<T> for Result<T, Report> {
-    fn into_interop(self) -> Result<T, Error> {
-        self.map_err(Error::from)
-    }
-}
-
-impl From<Error> for mlua::Error {
-    fn from(err: Error) -> Self {
-        mlua::Error::external(err.0)
-    }
-}
 
 pub fn run(layout: &Layout, layouts_dir: &Path) -> eyre::Result<()> {
     let lua = Lua::new();

@@ -16,13 +16,14 @@ pub enum SplitSize {
     Absolute(u32),
 }
 
-#[derive(PartialEq, Eq)]
+#[derive(PartialEq, Eq, Debug)]
 struct SplitOptions {
     direction: Direction,
     root: Root,
     size: Option<SplitSize>,
 }
 
+#[derive(Debug)]
 pub struct SplitBuilder {
     opts: SplitOptions,
     sibling_target: PaneTarget,
