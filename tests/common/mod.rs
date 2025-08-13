@@ -93,3 +93,16 @@ pub fn create_dummy_config(dir_mgr: &DirectoryManager) -> Result<Config> {
     File::create_new(path).wrap_err("failed to create dummy config")?;
     Config::new(dir_mgr)
 }
+
+pub fn new_layout(
+    layout_name: &str,
+    layout_contents: &str,
+    dir_mgr: &DirectoryManager,
+) -> Result<()> {
+    let layout_path = dir_mgr
+        .layouts_dir()?
+        .join(layout_name)
+        .with_extension("lua");
+    fs::write(layout_path, layout_contents).wrap_err("failed to write layout contents")?;
+    Ok(())
+}

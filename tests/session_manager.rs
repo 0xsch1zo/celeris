@@ -4,9 +4,14 @@ use color_eyre::eyre::eyre;
 use color_eyre::{Result, eyre::Context};
 use common::TestDirectoryManager;
 use git2::Repository;
+use handlebars::Handlebars;
 use itertools::Itertools;
-use sesh::layout;
+use rust_embed::Embed;
+use serde::Serialize;
+use sesh::session_manager::SwitchTarget;
+use sesh::tmux::Session;
 use sesh::{config::Config, repo_search, session_manager::ListSessionsOptions};
+use std::env;
 use std::fs::File;
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
@@ -114,4 +119,36 @@ fn new_session() -> Result<()> {
         thread::sleep(Duration::from_millis(50));
     }
     Err(eyre!("layout file hasn't been created after {wait_time:?}"))
+}
+
+#[derive(Embed)]
+#[folder = "templates/tests/"]
+#[include = "*.template.lua"]
+struct TestFiles;
+
+#[derive(Serialize)]
+struct TestData {
+    session_root: PathBuf,
+}
+
+#[test]
+fn basic_switch() -> Result<()> {
+    unsafe {
+        env::set_var("SESH_TMUX_SOCKET_NAME", "__sesh_testing");
+    }
+    let dir_mgr = TestDirectoryManager::new()?;
+    let mut handlebars = Handlebars::new();
+    handlebars.register_embed_templates_with_extension::<TestFiles>(".template.lua")?;
+    let test_data = TestData {
+        session_root: env::temp_dir(),
+    };
+    let layout_str = handlebars.render("session_with_root", &test_data)?;
+    common::new_layout("session_with_root", &layout_str, dir_mgr.as_ref())?;
+    let session_manager = common::test_session_manager(Arc::clone(dir_mgr.inner()))?;
+    session_manager.switch(SwitchTarget::Session("session/with/root".to_owned()))?;
+    assert_eq!(
+        Session::list_sessions()?.contains(&"session/with/root".to_owned()),
+        true
+    );
+    Ok(())
 }
