@@ -43,7 +43,7 @@ fn list_sessions() -> Result<()> {
 fn remove_session() -> Result<()> {
     let dir_mgr = TestDirectoryManager::new()?;
     common::create_dummy_layouts(&["test"], dir_mgr.as_ref())?;
-    let session_manager = common::test_session_manager(Arc::clone(dir_mgr.inner()))?;
+    let mut session_manager = common::test_session_manager(Arc::clone(dir_mgr.inner()))?;
     let layout_path = dir_mgr
         .as_ref()
         .layouts_dir()?

@@ -1,6 +1,5 @@
 mod core;
 
-use clap::builder::OsStr;
 use core::ExtractLayoutsIterator;
 use delegate::delegate;
 use handlebars::{Handlebars, RenderError};
@@ -24,7 +23,6 @@ pub enum Error {
     FSOperationFaiure(String, io::Error), // break down to pieces
     FailedCommand(String, io::Error),
     InvalidDirEntry(Box<dyn error::Error + Send + Sync + 'static>),
-    InvalidPath,
     NotFound(String),
     EditorNotFound,
     EditorInvalid(OsString),
@@ -39,7 +37,6 @@ impl Display for Error {
                 format!("layout manager file operation failed: {desc}")
             }
             Self::InvalidDirEntry(_) => "invalid dir entry".to_owned(),
-            Self::InvalidPath => "path contains invalid utf-8".to_owned(),
             Self::NotFound(layout) => format!("layout not found: {layout}"),
             Self::FailedCommand(command, _) => format!("failed to execute command: {command}"),
             Self::EditorNotFound => "$EDITOR is not set nor set in the config".to_owned(),
@@ -87,11 +84,6 @@ impl LayoutName {
         let core = core::LayoutName::try_from_path(path, &layout_manager.core)?;
         Ok(Self { core })
     }
-
-    pub fn try_from_storage_name(storage_name: String) -> Result<Self, Error> {
-        let core = core::LayoutName::try_from_storage_name(storage_name)?;
-        Ok(Self { core })
-    }
 }
 
 #[derive(Debug, RefCast)]
@@ -104,12 +96,7 @@ impl Layout {
     delegate! {
         to self.core {
             pub fn tmux_name(&self) -> &str;
-            pub fn storage_name(&self) -> &str;
             pub fn storage_path(&self, layouts_path: &Path) -> PathBuf;
-        }
-
-        to core::Layout {
-            pub fn extension() -> OsStr;
         }
     }
 }
@@ -163,7 +150,6 @@ impl LayoutManager {
     // delegate the pure ones that don't ned conversion
     delegate! {
         to self.core {
-            pub fn contains(&self, tmux_name: &str) -> bool;
             pub fn list(&self) -> Vec<&String>;
         }
     }
@@ -187,7 +173,8 @@ impl LayoutManager {
         self.core.layout(tmux_name).map(Layout::ref_cast)
     }
 
-    pub fn remove(self, tmux_name: &str) -> Result<(), Error> {
+    pub fn remove(&mut self, tmux_name: &str) -> Result<(), Error> {
+        self.core.remove(tmux_name)?;
         let layout = self
             .layout(tmux_name)
             .ok_or(Error::NotFound(tmux_name.to_owned()))?;

@@ -143,7 +143,7 @@ impl SessionManager {
         Ok(())
     }
 
-    pub fn remove(self, tmux_name: &str) -> Result<()> {
+    pub fn remove(&mut self, tmux_name: &str) -> Result<()> {
         self.layout_mgr
             .remove(tmux_name)
             .wrap_err_with(|| format!("failed to remove layout with name: {tmux_name}"))?;

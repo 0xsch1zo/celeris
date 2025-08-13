@@ -127,10 +127,6 @@ impl Layout {
         &self.tmux_name
     }
 
-    pub fn storage_name(&self) -> &str {
-        &self.storage_name
-    }
-
     pub fn storage_path(&self, layouts_dir: &Path) -> PathBuf {
         layouts_dir
             .join(&self.storage_name)
