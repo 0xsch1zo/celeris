@@ -8,43 +8,52 @@ use color_eyre::{Result, eyre::OptionExt};
 use std::path::PathBuf;
 use std::sync::Arc;
 
-#[derive(Debug)]
-pub struct WindowBuilder {
+#[derive(Debug, PartialEq, Eq)]
+struct WindowOptions {
     name: Option<String>,
     shell_command: Option<String>,
     root: Root,
+}
+
+#[derive(Debug)]
+pub struct WindowBuilder {
+    opts: WindowOptions,
     session: Arc<Session>,
 }
 
 impl WindowBuilder {
     pub fn new(session: Arc<Session>) -> Self {
-        Self {
+        let opts = WindowOptions {
             name: None,
             shell_command: None,
             root: Root::default(),
-            session,
-        }
+        };
+
+        Self { opts, session }
     }
 
     pub fn name(self, name: String) -> Self {
-        Self {
+        let opts = WindowOptions {
             name: Some(name),
-            ..self
-        }
+            ..self.opts
+        };
+        Self { opts, ..self }
     }
 
     pub fn root(self, path: PathBuf) -> Result<Self> {
-        Ok(Self {
+        let opts = WindowOptions {
             root: Root::custom(path)?,
-            ..self
-        })
+            ..self.opts
+        };
+        Ok(Self { opts, ..self })
     }
 
     pub fn raw_command(self, command: String) -> Self {
-        Self {
+        let opts = WindowOptions {
             shell_command: Some(command),
-            ..self
-        }
+            ..self.opts
+        };
+        Self { opts, ..self }
     }
 
     fn prepare_options(&self) -> Result<Vec<String>> {
@@ -57,7 +66,7 @@ impl WindowBuilder {
     }
 
     fn prepare_name(&self, options: &mut Vec<String>) {
-        let Some(name) = &self.name else {
+        let Some(name) = &self.opts.name else {
             return;
         };
 
@@ -65,14 +74,14 @@ impl WindowBuilder {
     }
 
     fn prepare_raw_command(&self, options: &mut Vec<String>) {
-        let Some(command) = &self.shell_command else {
+        let Some(command) = &self.opts.shell_command else {
             return;
         };
         options.push(command.to_owned());
     }
 
     fn prepare_root(&self, options: &mut Vec<String>) -> Result<()> {
-        let RootOptions::Custom(path) = self.root.as_ref() else {
+        let RootOptions::Custom(path) = self.opts.root.as_ref() else {
             return Ok(());
         };
         options.extend(["-c".to_owned(), utils::path_to_string(path)?]);
@@ -103,7 +112,7 @@ impl WindowBuilder {
         let window_core = self.create_window()?;
         session::register_window(&self.session, &window_core)?;
 
-        if let Some(_) = self.name {
+        if let Some(_) = self.opts.name {
             window_core.set_option("allow-rename", "off")?;
         }
         Ok(Window::new(window_core))
@@ -111,6 +120,12 @@ impl WindowBuilder {
 }
 
 impl tmux::BuilderTransform for WindowBuilder {}
+
+impl PartialEq for WindowBuilder {
+    fn eq(&self, other: &Self) -> bool {
+        self.opts == other.opts
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct WindowCore {

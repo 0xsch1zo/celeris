@@ -16,6 +16,7 @@ use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
 
+#[derive(Eq, PartialEq)]
 pub struct SessionBuilder {
     root: Root,
     session_name: String,
@@ -43,7 +44,7 @@ impl SessionBuilder {
     }
 
     fn prepare(&self) -> Result<Command> {
-        let mut command = tmux();
+        let mut command = tmux()?;
         // need to use low level api
         command.args([
             "new-session",
@@ -119,7 +120,7 @@ impl Session {
         }
 
         const DELIM: &str = "|";
-        let output = tmux()
+        let output = tmux()?
             .args([
                 "display-message",
                 "-p",
@@ -170,7 +171,7 @@ impl Session {
             return Ok(None);
         }
 
-        let output = tmux()
+        let output = tmux()?
             .args(["display-message", "-p", "#{session_name}"])
             .execute()?;
         Ok(Some(output.trim().to_owned()))
@@ -180,7 +181,7 @@ impl Session {
         if !tmux::server_running()? {
             return Ok(Vec::new());
         }
-        let output = tmux()
+        let output = tmux()?
             .args(["list-sessions", "-F", "#{session_name}"])
             .execute()?;
         Ok(output.trim().lines().map(ToOwned::to_owned).collect())
@@ -289,7 +290,7 @@ mod tests {
 
         targets.into_iter().try_for_each(|target| -> Result<()> {
             let exists = tmux::target_exists(&SessionTarget::new(&target))?;
-            let mut command = tmux();
+            let mut command = tmux()?;
             let status = command.args(["has-session", "-t", &target]).status()?;
             assert_eq!(
                 exists,
@@ -326,7 +327,7 @@ mod tests {
             panic!("active_name claimed that session is not attached")
         };
 
-        let output = tmux()
+        let output = tmux()?
             .args(["display-message", "-p", "#{session_name}"])
             .execute()?;
         assert_eq!(active_name, output.trim());

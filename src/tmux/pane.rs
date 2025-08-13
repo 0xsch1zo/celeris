@@ -16,35 +16,47 @@ pub enum SplitSize {
     Absolute(u32),
 }
 
-pub struct SplitBuilder {
+#[derive(PartialEq, Eq)]
+struct SplitOptions {
     direction: Direction,
     root: Root,
     size: Option<SplitSize>,
+}
+
+pub struct SplitBuilder {
+    opts: SplitOptions,
     sibling_target: PaneTarget,
 }
 
 impl SplitBuilder {
     fn new(sibling_target: PaneTarget, direction: Direction) -> Self {
-        Self {
+        let opts = SplitOptions {
             direction: direction,
             size: None,
             root: Root::default(),
+        };
+        Self {
+            opts,
             sibling_target,
         }
     }
 
     pub fn size(self, size: SplitSize) -> Self {
-        Self {
+        let opts = SplitOptions {
             size: Some(size),
-            ..self
-        }
+            ..self.opts
+        };
+
+        Self { opts, ..self }
     }
 
     pub fn root(self, path: PathBuf) -> Result<Self> {
-        Ok(Self {
+        let opts = SplitOptions {
             root: Root::custom(path)?,
-            ..self
-        })
+            ..self.opts
+        };
+
+        Ok(Self { opts, ..self })
     }
 
     fn prepare_options(&self) -> Result<Vec<String>> {
@@ -55,7 +67,7 @@ impl SplitBuilder {
     }
 
     fn prepare_size(&self, options: &mut Vec<String>) -> Result<()> {
-        let Some(size) = self.size else {
+        let Some(size) = self.opts.size else {
             return Ok(());
         };
 
@@ -75,7 +87,7 @@ impl SplitBuilder {
     }
 
     fn prepare_root(&self, options: &mut Vec<String>) -> Result<()> {
-        let RootOptions::Custom(path) = self.root.as_ref() else {
+        let RootOptions::Custom(path) = self.opts.root.as_ref() else {
             return Ok(());
         };
 
@@ -86,7 +98,7 @@ impl SplitBuilder {
     fn split_command(&self) -> Result<Command> {
         let mut command = tmux::targeted_command(&self.sibling_target, "split-window")?;
         command.args(["-P", "-F", "#{pane_id}"]);
-        match self.direction {
+        match self.opts.direction {
             Direction::Vertical => command.arg("-v"),
             Direction::Horizontal => command.arg("-h"),
         };
@@ -104,6 +116,14 @@ impl SplitBuilder {
 }
 
 impl tmux::BuilderTransform for SplitBuilder {}
+
+impl Eq for SplitBuilder {}
+
+impl PartialEq for SplitBuilder {
+    fn eq(&self, other: &Self) -> bool {
+        self.opts == other.opts
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct Pane {

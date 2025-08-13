@@ -8,7 +8,11 @@ use color_eyre::{
     Result,
     eyre::{Context, eyre},
 };
-use std::{fmt::Display, str};
+use std::{
+    env::{self, VarError},
+    fmt::Display,
+    str,
+};
 use std::{
     path::PathBuf,
     process::{Command, Stdio},
@@ -19,8 +23,22 @@ pub use session::{Session, SessionBuilder};
 pub use window::{Window, WindowBuilder};
 
 // TODO: provide a custom tmux command builder for special cases
-fn tmux() -> Command {
-    Command::new("tmux")
+fn tmux() -> Result<Command> {
+    let mut command = Command::new("tmux");
+    match (
+        env::var("SESH_TMUX_SOCKET_NAME"),
+        env::var("SESH_TMUX_SOCKET_PATH"),
+    ) {
+        (Ok(ref name), Err(VarError::NotPresent)) => command.args(["-L", name]),
+        (Err(VarError::NotPresent), Ok(ref path)) => command.args(["-S", path]),
+        (Err(VarError::NotUnicode(err)), _) | (_, Err(VarError::NotUnicode(err))) => {
+            return Err(eyre!(
+                "tmux socket target contains invalid unicode: {err:?}"
+            ));
+        }
+        _ => return Ok(command),
+    };
+    Ok(command)
 }
 
 trait TmuxExecuteExt {
@@ -50,13 +68,13 @@ fn targeted_command<T: Target + Display>(target: &T, command: &str) -> Result<Co
             "tried to execute a commend: {command} with a non-existing target: {target}"
         ));
     }
-    let mut tmux = tmux();
+    let mut tmux = tmux()?;
     tmux.args([command, "-t", target.get()]);
     Ok(tmux)
 }
 
 pub fn server_running() -> Result<bool> {
-    let mut command = tmux();
+    let mut command = tmux()?;
     command.args(["display-message", "-p", "#{socket_path}"]);
 
     let status = command
@@ -75,13 +93,13 @@ enum TerminalState {
     Normal,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 enum RootOptions {
     Default,
     Custom(PathBuf),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct Root(RootOptions);
 
 impl Root {
@@ -221,7 +239,7 @@ impl Display for PaneTarget {
 }
 
 fn target_exists<T: Target>(target: &T) -> Result<bool> {
-    let has_session_status = tmux()
+    let has_session_status = tmux()?
         .args(["has-session", "-t", target.get()])
         .stderr(Stdio::null())
         .stdout(Stdio::null())

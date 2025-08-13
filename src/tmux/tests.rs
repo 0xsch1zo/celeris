@@ -24,7 +24,7 @@ impl Drop for Session {
 
 impl Session {
     pub fn detach_clients(&self) -> Result<()> {
-        tmux()
+        tmux()?
             .args(["detach-client", "-s", self.target().get()])
             .execute()?;
         Ok(())
@@ -36,7 +36,7 @@ pub fn testing_session() -> Result<Arc<Session>> {
 }
 
 pub fn selected_pane_id(target: &str) -> Result<String> {
-    Ok(tmux()
+    Ok(tmux()?
         .args(["display-message", "-p", "-t", target, "#{pane_id}"])
         .execute()?
         .trim()
