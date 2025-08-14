@@ -1,22 +1,21 @@
+#[allow(dead_code)]
 mod common;
 
 use color_eyre::eyre::eyre;
 use color_eyre::{Result, eyre::Context};
 use common::TestDirectoryManager;
-use git2::Repository;
 use handlebars::Handlebars;
-use itertools::Itertools;
 use rust_embed::Embed;
 use serde::Serialize;
+use sesh::session_manager::ListSessionsOptions;
 use sesh::session_manager::SwitchTarget;
 use sesh::tmux::Session;
-use sesh::{config::Config, repo_search, session_manager::ListSessionsOptions};
 use std::env;
 use std::fs::File;
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 use std::time::{Duration, Instant};
-use std::{fs, path::PathBuf};
 
 #[test]
 fn list_sessions() -> Result<()> {
@@ -62,38 +61,6 @@ fn remove_session() -> Result<()> {
     session_manager.remove("test")?;
     assert!(!layout_path.exists());
 
-    Ok(())
-}
-
-#[test]
-fn find_repos() -> Result<()> {
-    let dir_mgr = TestDirectoryManager::new()?;
-    let config_path = dir_mgr.config_dir()?.join("config.toml");
-    let config = format!(
-        r#"
-[[search_roots]]
-path = "{}"
-"#,
-        dir_mgr.repo_dir().to_string_lossy()
-    );
-    fs::write(config_path, config.as_bytes()).wrap_err("failed to write test config")?;
-    let config = Config::new(dir_mgr.as_ref())?;
-
-    let given_repos = ["test1", "test2", "test3"]
-        .map(ToOwned::to_owned)
-        .map(|repo_name| dir_mgr.repo_dir().join(repo_name));
-
-    given_repos
-        .iter()
-        .map(|path| {
-            Repository::init(path)?;
-            Ok(())
-        })
-        .collect::<Result<()>>()?;
-
-    let repos = repo_search::search(&config)?;
-    let repos = repos.into_iter().map(PathBuf::from).collect_vec();
-    assert_eq!(given_repos.iter().all(|r| repos.contains(r)), true);
     Ok(())
 }
 

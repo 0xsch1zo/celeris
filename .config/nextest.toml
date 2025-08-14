@@ -14,3 +14,7 @@ test-group = "script"
 [[profile.default.overrides]]
 filter = "binary(session_manager)"
 test-group = "integration"
+
+[[profile.default.overrides]]
+filter = "binary(repo_search)"
+test-group = "integration"

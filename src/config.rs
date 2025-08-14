@@ -6,7 +6,7 @@ use serde::Deserialize;
 use std::fs;
 use std::path::Path;
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Clone, Debug)]
 pub struct Config {
     pub editor: Option<String>,
     #[serde(default = "default_depth")]
@@ -23,7 +23,7 @@ pub struct Config {
     pub disable_editor_on_creation: bool,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct SearchRoot {
     pub path: String,
     pub depth: Option<usize>,
