@@ -81,9 +81,8 @@ impl SessionManager {
         let layout = layout_from_options(name, path.clone(), &self.layout_mgr)?;
         let name = layout.tmux_name().to_owned();
         self.layout_mgr
-            .create(layout, &path)
+            .create(layout, &path, &self.config, &self.dir_mgr.config_dir()?)
             .wrap_err("failed to create layout file")?;
-        self.layout_mgr.edit(&name, &self.config)?;
         Ok(name) // TODO: maybe return a message
     }
 

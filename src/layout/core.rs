@@ -22,6 +22,17 @@ pub enum PathState {
     File,
 }
 
+pub enum TemplateDecision {
+    GenerateCustom,
+    GenerateDefault,
+    LeaveEmpty,
+}
+
+pub enum EditorDecision {
+    Spawn,
+    DontSpawn,
+}
+
 impl Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let message = match self {
@@ -397,5 +408,20 @@ mod tests {
             assert_eq!(name.tmux_name(), "test/test/test");
             Ok(())
         }
+    }
+}
+
+pub fn template_decision(template_disabled: bool, custom_exists: bool) -> TemplateDecision {
+    match (template_disabled, custom_exists) {
+        (true, _) => TemplateDecision::LeaveEmpty,
+        (_, true) => TemplateDecision::GenerateCustom,
+        (_, false) => TemplateDecision::GenerateDefault,
+    }
+}
+
+pub fn editor_decision(disable_editor_on_creation: bool) -> EditorDecision {
+    match disable_editor_on_creation {
+        true => EditorDecision::DontSpawn,
+        false => EditorDecision::Spawn,
     }
 }

@@ -17,13 +17,10 @@ pub struct Config {
     pub search_roots: Vec<SearchRoot>,
     #[serde(default)]
     pub excludes: Vec<String>,
-}
-
-#[derive(Deserialize, Debug)]
-pub struct FilterCommand {
-    pub program: String,
     #[serde(default)]
-    pub args: Vec<String>,
+    pub disable_template: bool,
+    #[serde(default)]
+    pub disable_editor_on_creation: bool,
 }
 
 #[derive(Deserialize, Debug)]

@@ -11,12 +11,15 @@ use std::ffi::OsString;
 use std::fmt::Display;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::string;
 use std::{env, io};
 use std::{error, fs};
 use walkdir::WalkDir;
 
 use crate::config::Config;
-use crate::layout::core::PathState;
+use crate::layout::core::{PathState, editor_decision};
+use core::EditorDecision;
+use core::TemplateDecision;
 
 #[derive(Debug)]
 pub enum Error {
@@ -28,6 +31,7 @@ pub enum Error {
     EditorNotFound,
     EditorInvalid(OsString),
     TemplateRenderError(String, RenderError),
+    InvalidUnicode(string::FromUtf8Error),
 }
 
 impl Display for Error {
@@ -47,6 +51,7 @@ impl Display for Error {
             Self::TemplateRenderError(comment, _) => {
                 format!("Failed to render layout template: {comment}")
             }
+            Self::InvalidUnicode(_) => format!("encountered invalid unicode during processing"),
         };
         write!(f, "{message}")
     }
@@ -60,6 +65,7 @@ impl error::Error for Error {
             Self::InvalidDirEntry(e) => Some(&**e),
             Self::FailedCommand(_, e) => Some(e),
             Self::TemplateRenderError(_, e) => Some(e),
+            Self::InvalidUnicode(e) => Some(e),
             _ => None,
         }
     }
@@ -68,6 +74,12 @@ impl error::Error for Error {
 impl From<core::Error> for Error {
     fn from(value: core::Error) -> Self {
         Error::CoreError(Box::new(value))
+    }
+}
+
+impl From<string::FromUtf8Error> for Error {
+    fn from(value: string::FromUtf8Error) -> Self {
+        Error::InvalidUnicode(value)
     }
 }
 
@@ -105,6 +117,10 @@ impl Layout {
         to self.core {
             pub fn tmux_name(&self) -> &str;
             pub fn storage_path(&self, layouts_path: &Path) -> PathBuf;
+        }
+
+        to core::Layout {
+            fn extension() -> OsString;
         }
     }
 }
@@ -165,8 +181,15 @@ impl LayoutManager {
         }
     }
 
-    pub fn create(&mut self, layout: Layout, root: &Path) -> Result<(), Error> {
-        let template = template(TemplateData::new(layout.tmux_name(), &root))?;
+    pub fn create(
+        &mut self,
+        layout: Layout,
+        root: &Path,
+        config: &Config,
+        config_path: &Path,
+    ) -> Result<(), Error> {
+        let layout_name = layout.tmux_name().to_owned();
+        let template = template(TemplateData::new(&layout_name, &root), config, config_path)?;
         fs::write(&layout.storage_path(&self.layouts_dir), template).map_err(|e| {
             Error::FSOperationFaiure(
                 format!(
@@ -177,6 +200,9 @@ impl LayoutManager {
             )
         })?;
         self.core.create(layout.core)?;
+        if let EditorDecision::Spawn = editor_decision(config.disable_editor_on_creation) {
+            self.edit(&layout_name, config)?;
+        }
         Ok(())
     }
 
@@ -237,10 +263,32 @@ impl<'a> TemplateData<'a> {
     }
 }
 
-fn template(data: TemplateData) -> Result<String, Error> {
-    let handlbars = Handlebars::new();
-    let template = include_str!("../templates/default.lua");
-    Ok(handlbars.render_template(template, &data).map_err(|e| {
-        Error::TemplateRenderError("failed to render default layout template".to_owned(), e)
-    })?)
+fn template(data: TemplateData, config: &Config, config_path: &Path) -> Result<String, Error> {
+    let handlebars = Handlebars::new();
+    let default_template = include_str!("../templates/default.lua");
+    let custom_template_path = config_path
+        .join("template")
+        .with_extension(Layout::extension());
+    let custom_template = if custom_template_path.exists() {
+        let raw_custom_template = fs::read(custom_template_path).map_err(|e| {
+            Error::FSOperationFaiure("failed to read custom template file".to_owned(), e)
+        })?;
+        Some(String::from_utf8(raw_custom_template)?)
+    } else {
+        None
+    };
+
+    match core::template_decision(config.disable_template, custom_template.is_some()) {
+        TemplateDecision::LeaveEmpty => Ok(String::new()),
+        TemplateDecision::GenerateDefault => Ok(handlebars
+            .render_template(default_template, &data)
+            .map_err(|e| {
+                Error::TemplateRenderError("failed to render default layout template".to_owned(), e)
+            })?),
+        TemplateDecision::GenerateCustom => Ok(handlebars
+            .render_template(custom_template.as_ref().unwrap(), &data)
+            .map_err(|e| {
+                Error::TemplateRenderError("failed to render custom layout template".to_owned(), e)
+            })?),
+    }
 }
