@@ -1,8 +1,8 @@
 use crate::utils;
-use clap::builder::OsStr;
 use itertools::Itertools;
 use sanitize_filename;
 use std::{
+    ffi::OsString,
     fmt::Display,
     ops::ControlFlow,
     path::{Path, PathBuf},
@@ -14,6 +14,12 @@ pub enum Error {
     NotFound(String),
     InvalidFilename(Box<dyn std::error::Error + Sync + Send>),
     InvalidLayoutName(String),
+    NotADirectory(PathBuf),
+}
+
+pub enum PathState {
+    Directory,
+    File,
 }
 
 impl Display for Error {
@@ -27,6 +33,9 @@ impl Display for Error {
             }
             Self::InvalidFilename(_) => "failed to get a file name of path".to_owned(),
             Self::InvalidLayoutName(comment) => format!("invalid layout name: {comment}"),
+            Self::NotADirectory(path) => {
+                format!("the following path needs to be a directory: {path:?}")
+            }
         };
         write!(f, "{message}")
     }
@@ -44,23 +53,29 @@ impl std::error::Error for Error {
 #[derive(Debug)]
 pub struct LayoutName(String);
 
-// FIXME: names with _ have a bug
 impl LayoutName {
-    const STORAGE_NAME_DELIMETER: &str = "_";
+    const STORAGE_NAME_DELIMETER: &str = ".";
     const TMUX_NAME_DELIMETER: &str = "/";
 
     pub fn try_new(name: String) -> Result<Self, Error> {
         let tmux_special_chars = ['@', '$', '%', ':', '.'];
         if name.chars().any(|c| tmux_special_chars.contains(&c)) {
-            return Err(Error::InvalidLayoutName(
-                "name contains characters that tmux treats specially".to_owned(),
-            ));
+            return Err(Error::InvalidLayoutName(format!(
+                "name contains characters that tmux treats specially({tmux_special_chars:?}). You can also set a custom name when creating a session"
+            )));
         }
         Ok(Self(name))
     }
 
-    pub fn try_from_path(path: &Path, layout_manager: &LayoutManager) -> Result<Self, Error> {
-        let mut name = utils::file_name(path).map_err(|e| Error::InvalidFilename(e.into()))?;
+    pub fn try_from_path(
+        path: &Path,
+        state: PathState,
+        layout_manager: &LayoutManager,
+    ) -> Result<Self, Error> {
+        if let PathState::File = state {
+            return Err(Error::NotADirectory(path.to_owned()));
+        }
+        let mut name = utils::file_name(&path).map_err(|e| Error::InvalidFilename(e.into()))?;
         let ancestors = path.ancestors().collect::<Vec<_>>();
         let ancestors: Vec<_> = ancestors
             .iter()
@@ -128,24 +143,33 @@ impl Layout {
     }
 
     pub fn storage_path(&self, layouts_dir: &Path) -> PathBuf {
-        layouts_dir
-            .join(&self.storage_name)
-            .with_extension(Self::extension())
+        let path = layouts_dir.join(&self.storage_name);
+        // yeah it's ugly because add_extension is still in fucking nightly
+        let final_extension = if path.extension().is_some() {
+            let mut final_extension = path.extension().unwrap().to_owned();
+            final_extension.push(".");
+            final_extension.push(Self::extension());
+            final_extension
+        } else {
+            Self::extension()
+        };
+
+        path.with_extension(final_extension)
     }
 
-    pub fn extension() -> OsStr {
-        "lua".into()
+    pub fn extension() -> OsString {
+        OsString::from("lua")
     }
 }
 
 pub struct LayoutInfo {
     path: PathBuf,
-    is_file: bool,
+    state: PathState,
 }
 
 impl LayoutInfo {
-    pub fn new(path: PathBuf, is_file: bool) -> Self {
-        Self { path, is_file }
+    pub fn new(path: PathBuf, state: PathState) -> Self {
+        Self { path, state }
     }
 }
 
@@ -159,8 +183,11 @@ impl<'a> ExtractLayouts<'a> {
         I: Iterator<Item = LayoutInfo> + 'a,
     {
         let iter = iter
-            .filter(|info| info.is_file)
-            .filter(|info| info.path.extension() == Some(&OsStr::from(Layout::extension())))
+            .filter(|info| match info.state {
+                PathState::Directory => false,
+                PathState::File => true,
+            })
+            .filter(|info| info.path.extension() == Some(&Layout::extension()))
             .map(|info| {
                 Ok(utils::file_stem(&info.path).map_err(|e| Error::InvalidFilename(e.into()))?)
             })
@@ -251,6 +278,32 @@ mod tests {
     }
 
     #[test]
+    fn storage_path() -> Result<()> {
+        let layout_mgr = layout_manager_with_names(vec!["aaa", "ccc"])?;
+        let layouts = ["/test/aaa", "/test/dd.d/bbb"]
+            .into_iter()
+            .map(|path| {
+                LayoutName::try_from_path(Path::new(path), PathState::Directory, &layout_mgr)
+            })
+            .map(|layout_name| Ok(Layout::new(layout_name?)))
+            .collect::<Result<Vec<_>, Error>>()?;
+        let layout_dir = PathBuf::from("/test");
+        // dummy is because there is no goddamn add_extension
+        let expected_storage_names = ["test.aaa.dummy", "bbb"];
+        let expected_storage_paths = expected_storage_names
+            .into_iter()
+            .map(|name| layout_dir.join(name).with_extension(Layout::extension()))
+            .collect_vec();
+        let storage_paths_got = layouts
+            .iter()
+            .map(|layout| layout.storage_path(&layout_dir))
+            .collect_vec();
+
+        assert_eq!(expected_storage_paths, storage_paths_got);
+        Ok(())
+    }
+
+    #[test]
     fn layout() -> Result<()> {
         let layout_manager = layout_manager_with_names(vec!["test"])?;
         let layout = layout_manager.layout("test");
@@ -300,7 +353,11 @@ mod tests {
         #[test]
         fn normal() -> Result<()> {
             let layout_manager = layout_manager_with_names(Vec::new())?;
-            let name = LayoutName::try_from_path(Path::new("/test/test"), &layout_manager)?;
+            let name = LayoutName::try_from_path(
+                Path::new("/test/test"),
+                PathState::Directory,
+                &layout_manager,
+            )?;
             assert_eq!(name.tmux_name(), "test");
             Ok(())
         }
@@ -308,7 +365,11 @@ mod tests {
         #[test]
         fn simple_duplicate() -> Result<()> {
             let layout_manager = layout_manager_with_names(vec!["test"])?;
-            let name = LayoutName::try_from_path(Path::new("/test/test"), &layout_manager)?;
+            let name = LayoutName::try_from_path(
+                Path::new("/test/test"),
+                PathState::Directory,
+                &layout_manager,
+            )?;
             assert_eq!(name.tmux_name(), "test/test");
             Ok(())
         }
@@ -316,14 +377,23 @@ mod tests {
         #[test]
         fn undeducable_duplicate() -> Result<()> {
             let layout_manager = layout_manager_with_names(vec!["test"])?;
-            let _ = LayoutName::try_from_path(Path::new("/test"), &layout_manager).unwrap_err();
+            let _ = LayoutName::try_from_path(
+                Path::new("/test"),
+                PathState::Directory,
+                &layout_manager,
+            )
+            .unwrap_err();
             Ok(())
         }
 
         #[test]
         fn multiple() -> Result<()> {
             let layout_manager = layout_manager_with_names(vec!["test", "test/test"])?;
-            let name = LayoutName::try_from_path(Path::new("/test/test/test"), &layout_manager)?;
+            let name = LayoutName::try_from_path(
+                Path::new("/test/test/test"),
+                PathState::Directory,
+                &layout_manager,
+            )?;
             assert_eq!(name.tmux_name(), "test/test/test");
             Ok(())
         }

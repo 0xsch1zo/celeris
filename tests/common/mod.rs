@@ -52,8 +52,6 @@ impl TestDirectoryManager {
             #[expr(Ok($?))]
             pub fn config_dir(&self) -> Result<PathBuf>;
             #[expr(Ok($?))]
-            pub fn cache_dir(&self) -> Result<PathBuf>;
-            #[expr(Ok($?))]
             pub fn layouts_dir(&self) -> Result<PathBuf>;
         }
     }

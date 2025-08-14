@@ -50,6 +50,14 @@ fn remove_session() -> Result<()> {
         .join("test")
         .with_extension("lua");
 
+    println!(
+        "{}",
+        session_manager.list(ListSessionsOptions {
+            tmux_format: false,
+            include_active: false,
+            exclude_running: true
+        })?
+    );
     assert!(layout_path.exists());
     session_manager.remove("test")?;
     assert!(!layout_path.exists());
@@ -145,9 +153,9 @@ fn basic_switch() -> Result<()> {
     let layout_str = handlebars.render("session_with_root", &test_data)?;
     common::new_layout("session_with_root", &layout_str, dir_mgr.as_ref())?;
     let session_manager = common::test_session_manager(Arc::clone(dir_mgr.inner()))?;
-    session_manager.switch(SwitchTarget::Session("session/with/root".to_owned()))?;
+    session_manager.switch(SwitchTarget::Session("session_with_root".to_owned()))?;
     assert_eq!(
-        Session::list_sessions()?.contains(&"session/with/root".to_owned()),
+        Session::list_sessions()?.contains(&"session_with_root".to_owned()),
         true
     );
     Ok(())

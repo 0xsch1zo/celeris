@@ -16,6 +16,7 @@ use std::{error, fs};
 use walkdir::WalkDir;
 
 use crate::config::Config;
+use crate::layout::core::PathState;
 
 #[derive(Debug)]
 pub enum Error {
@@ -81,7 +82,14 @@ impl LayoutName {
     }
 
     pub fn try_from_path(path: &Path, layout_manager: &LayoutManager) -> Result<Self, Error> {
-        let core = core::LayoutName::try_from_path(path, &layout_manager.core)?;
+        if !path.exists() {
+            return Err(Error::NotFound(format!("path: {path:?}")));
+        }
+        let path_state = match path.is_dir() {
+            true => core::PathState::Directory,
+            false => core::PathState::File,
+        };
+        let core = core::LayoutName::try_from_path(path, path_state, &layout_manager.core)?;
         Ok(Self { core })
     }
 }
@@ -134,8 +142,11 @@ impl LayoutManager {
         Ok(paths
             .into_iter()
             .map(|path| {
-                let is_file = path.is_file();
-                core::LayoutInfo::new(path, is_file)
+                let path_state = match path.is_file() {
+                    true => PathState::File,
+                    false => PathState::Directory,
+                };
+                core::LayoutInfo::new(path, path_state)
             })
             .extract_layouts()
             .try_collect()?)
@@ -174,7 +185,6 @@ impl LayoutManager {
     }
 
     pub fn remove(&mut self, tmux_name: &str) -> Result<(), Error> {
-        self.core.remove(tmux_name)?;
         let layout = self
             .layout(tmux_name)
             .ok_or(Error::NotFound(tmux_name.to_owned()))?;
@@ -187,6 +197,7 @@ impl LayoutManager {
                 e,
             )
         })?;
+        self.core.remove(tmux_name)?;
         Ok(())
     }
 
