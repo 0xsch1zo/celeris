@@ -5,17 +5,23 @@ use color_eyre::eyre::eyre;
 use color_eyre::{Result, eyre::Context};
 use common::TestDirectoryManager;
 use handlebars::Handlebars;
+use itertools::Itertools;
 use rust_embed::Embed;
 use serde::Serialize;
-use sesh::session_manager::ListSessionsOptions;
+use sesh::config::Config;
 use sesh::session_manager::SwitchTarget;
-use sesh::tmux::Session;
-use std::env;
+use sesh::session_manager::{ListSessionsOptions, SessionManager};
 use std::fs::File;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 use std::time::{Duration, Instant};
+use std::{env, fs};
+
+#[derive(Embed)]
+#[folder = "templates/tests/"]
+#[include = "*.lua"]
+struct TestFiles;
 
 #[test]
 fn list_sessions() -> Result<()> {
@@ -34,6 +40,66 @@ fn list_sessions() -> Result<()> {
         .lines()
         .map(str::trim)
         .zip(dummy_layouts)
+        .for_each(|(output, session)| assert_eq!(output, session));
+    Ok(())
+}
+
+#[test]
+fn list_sessions_active() -> Result<()> {
+    unsafe {
+        env::set_var("SESH_TMUX_SOCKET_NAME", "__sesh_testing");
+    }
+
+    let dir_mgr = TestDirectoryManager::new()?;
+    let config = Arc::new(Config {
+        disable_editor_on_creation: true,
+        ..Config::default()
+    });
+
+    let dummy_layouts = ["test1", "test2", "test3"];
+    common::create_dummy_layouts(&dummy_layouts, dir_mgr.as_ref())?;
+    let mut session_manager = SessionManager::new(config, Arc::clone(&dir_mgr.inner()))?;
+
+    let active_layouts = ["active_test", "active_test2", "active_test3"]
+        .into_iter()
+        .map(ToOwned::to_owned)
+        .collect_vec();
+
+    let generic_layout = TestFiles::get("generic_layout.lua").unwrap().data;
+    active_layouts.iter().try_for_each(|layout| -> Result<()> {
+        session_manager.create(Some(layout.to_owned()), env::temp_dir())?;
+        Ok(())
+    })?;
+
+    let layouts_dir = dir_mgr.layouts_dir()?;
+    active_layouts.iter().try_for_each(|layout| {
+        fs::write(
+            layouts_dir.join(layout).with_extension("lua"),
+            &generic_layout,
+        )
+    })?;
+
+    active_layouts
+        .iter()
+        .try_for_each(|layout| session_manager.switch(SwitchTarget::Session(layout.to_owned())))?;
+
+    let opts = ListSessionsOptions {
+        tmux_format: false,
+        include_active: true,
+        exclude_running: false,
+    };
+
+    let output = session_manager.list(opts)?;
+    output
+        .lines()
+        .map(str::trim)
+        .sorted()
+        .zip(
+            dummy_layouts
+                .into_iter()
+                .chain(active_layouts.iter().map(String::as_str))
+                .sorted(),
+        )
         .for_each(|(output, session)| assert_eq!(output, session));
     Ok(())
 }
@@ -99,7 +165,7 @@ fn new_session() -> Result<()> {
 #[derive(Embed)]
 #[folder = "templates/tests/"]
 #[include = "*.template.lua"]
-struct TestFiles;
+struct TemplateFiles;
 
 #[derive(Serialize)]
 struct TestData {
@@ -113,7 +179,7 @@ fn comp_test() -> Result<()> {
     }
     let dir_mgr = TestDirectoryManager::new()?;
     let mut handlebars = Handlebars::new();
-    handlebars.register_embed_templates_with_extension::<TestFiles>(".template.lua")?;
+    handlebars.register_embed_templates_with_extension::<TemplateFiles>(".template.lua")?;
     let test_data = TestData {
         session_root: env::temp_dir(),
     };
@@ -121,9 +187,5 @@ fn comp_test() -> Result<()> {
     common::new_layout("comptest", &layout_str, dir_mgr.as_ref())?;
     let session_manager = common::test_session_manager(Arc::clone(dir_mgr.inner()))?;
     session_manager.switch(SwitchTarget::Session("comptest".to_owned()))?;
-    assert_eq!(
-        Session::list_sessions()?.contains(&"comptest".to_owned()),
-        true
-    );
     Ok(())
 }

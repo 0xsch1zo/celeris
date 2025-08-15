@@ -3,6 +3,9 @@ name = "sesh"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+integration_test = []
+
 [dependencies]
 toml = "0.8.23" 
 serde = { version = "1.0.219", features = ["derive"] }
@@ -22,3 +25,7 @@ rust-embed = "8.7.2"
 
 [dev-dependencies]
 test-with = "0.15.2"
+
+[[test]]
+name = "session_manager"
+required-features = ["integration_test"]

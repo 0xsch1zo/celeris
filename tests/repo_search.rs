@@ -24,14 +24,10 @@ fn create_repos(root: &Path, dirs: &[String]) -> Result<()> {
 }
 
 fn basic_config(search_root: SearchRoot) -> Config {
+    let config = Config::default();
     Config {
         search_roots: vec![search_root],
-        editor: None,
-        depth: 10,
-        excludes: Vec::new(),
-        search_subdirs: false,
-        disable_editor_on_creation: false,
-        disable_template: false,
+        ..config
     }
 }
 

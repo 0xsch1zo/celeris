@@ -70,7 +70,7 @@ impl AsRef<DirectoryManager> for TestDirectoryManager {
 }
 
 pub fn test_session_manager(dir_mgr: Arc<DirectoryManager>) -> Result<SessionManager> {
-    let config = Arc::new(create_dummy_config(&dir_mgr)?);
+    let config = Arc::new(Config::default());
     Ok(SessionManager::new(config, dir_mgr)?)
 }
 
@@ -84,12 +84,6 @@ pub fn create_dummy_layouts(names: &[&str], dir_mgr: &DirectoryManager) -> Resul
         })
         .try_collect()?;
     Ok(())
-}
-
-pub fn create_dummy_config(dir_mgr: &DirectoryManager) -> Result<Config> {
-    let path = dir_mgr.config_dir()?.join("config.toml");
-    File::create_new(path).wrap_err("failed to create dummy config")?;
-    Config::new(dir_mgr)
 }
 
 pub fn new_layout(

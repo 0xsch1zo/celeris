@@ -1,6 +1,7 @@
 mod pane;
 mod session;
-#[cfg(test)]
+#[cfg(any(test, feature = "integration_test"))]
+#[allow(dead_code)]
 mod tests;
 mod window;
 

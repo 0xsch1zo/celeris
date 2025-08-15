@@ -171,10 +171,15 @@ impl Session {
             return Ok(None);
         }
 
+        // FIXME: client_session
         let output = tmux()?
-            .args(["display-message", "-p", "#{session_name}"])
+            .args(["display-message", "-p", "#{client_session}"])
             .execute()?;
-        Ok(Some(output.trim().to_owned()))
+        if output.trim().is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(output.trim().to_owned()))
+        }
     }
 
     pub fn list_sessions() -> Result<Vec<String>> {
@@ -328,7 +333,7 @@ mod tests {
         };
 
         let output = tmux()?
-            .args(["display-message", "-p", "#{session_name}"])
+            .args(["display-message", "-p", "#{client_session}"])
             .execute()?;
         assert_eq!(active_name, output.trim());
         Ok(())

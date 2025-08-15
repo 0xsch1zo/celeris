@@ -7,20 +7,29 @@ use std::fs;
 use std::path::Path;
 
 #[derive(Deserialize, Clone, Debug)]
+#[serde(default)]
 pub struct Config {
     pub editor: Option<String>,
-    #[serde(default = "default_depth")]
     pub depth: usize,
-    #[serde(default)]
     pub search_subdirs: bool,
-    #[serde(default)]
     pub search_roots: Vec<SearchRoot>,
-    #[serde(default)]
     pub excludes: Vec<String>,
-    #[serde(default)]
     pub disable_template: bool,
-    #[serde(default)]
     pub disable_editor_on_creation: bool,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            editor: None,
+            depth: 10,
+            search_subdirs: false,
+            search_roots: Vec::new(),
+            excludes: Vec::new(),
+            disable_template: false,
+            disable_editor_on_creation: false,
+        }
+    }
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -28,10 +37,6 @@ pub struct SearchRoot {
     pub path: String,
     pub depth: Option<usize>,
     pub excludes: Option<Vec<String>>,
-}
-
-fn default_depth() -> usize {
-    10
 }
 
 pub enum PathType {

@@ -271,6 +271,22 @@ impl LayoutManager {
         Ok(())
     }
 }
+
+pub fn template_decision(template_disabled: bool, custom_exists: bool) -> TemplateDecision {
+    match (template_disabled, custom_exists) {
+        (true, _) => TemplateDecision::LeaveEmpty,
+        (_, true) => TemplateDecision::GenerateCustom,
+        (_, false) => TemplateDecision::GenerateDefault,
+    }
+}
+
+pub fn editor_decision(disable_editor_on_creation: bool) -> EditorDecision {
+    match disable_editor_on_creation {
+        true => EditorDecision::DontSpawn,
+        false => EditorDecision::Spawn,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -408,20 +424,5 @@ mod tests {
             assert_eq!(name.tmux_name(), "test/test/test");
             Ok(())
         }
-    }
-}
-
-pub fn template_decision(template_disabled: bool, custom_exists: bool) -> TemplateDecision {
-    match (template_disabled, custom_exists) {
-        (true, _) => TemplateDecision::LeaveEmpty,
-        (_, true) => TemplateDecision::GenerateCustom,
-        (_, false) => TemplateDecision::GenerateDefault,
-    }
-}
-
-pub fn editor_decision(disable_editor_on_creation: bool) -> EditorDecision {
-    match disable_editor_on_creation {
-        true => EditorDecision::DontSpawn,
-        false => EditorDecision::Spawn,
     }
 }

@@ -30,4 +30,4 @@ window2:default_pane():split("vertical", {
 pane:select()
 pane:run_command("echo test")
 
-window2:even_out()
+window2:even_out("horizontal")
