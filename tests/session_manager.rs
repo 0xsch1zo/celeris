@@ -255,6 +255,10 @@ fn last_session() -> Result<()> {
         disable_editor_on_creation: true,
         ..Config::default()
     });
+
+    let template = TestFiles::get("generic_layout.lua").unwrap().data;
+    fs::write(&dir_mgr.custom_template_path()?, template)?;
+
     let mut session_manager = SessionManager::new(config, Arc::clone(dir_mgr.inner()))?;
     session_manager.create(Some("test".to_owned()), env::temp_dir())?;
     let _ = session_manager

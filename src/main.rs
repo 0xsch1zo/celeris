@@ -27,14 +27,14 @@ fn main() -> Result<()> {
     let mut session_manager = SessionManager::new(Arc::clone(&config), Arc::new(dir_mgr))?;
 
     match cli.command {
-        Commands::EditSession { name } => session_manager.edit(&name)?,
+        Commands::Edit { name } => session_manager.edit(&name)?,
         Commands::Switch { target } => session_manager.switch(target.into())?,
-        Commands::RemoveSession { name } => session_manager.remove(&name)?,
+        Commands::Remove { name } => session_manager.remove(&name)?,
         _ => {
             let output = match cli.command {
-                Commands::FindRepos => repo_search::search(&config)?.join("\n"),
-                Commands::NewSession { name, path } => session_manager.create(name, path)?,
-                Commands::ListSessions { opts } => session_manager.list(opts.into())?,
+                Commands::Search => repo_search::search(&config)?.join("\n"),
+                Commands::New { name, path } => session_manager.create(name, path)?,
+                Commands::List { opts } => session_manager.list(opts.into())?,
                 _ => unreachable!(),
             };
 

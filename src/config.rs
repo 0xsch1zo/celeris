@@ -6,6 +6,8 @@ use serde::Deserialize;
 use std::fs;
 use std::path::Path;
 
+// make config not mandatory, warn in repo_search
+
 #[derive(Deserialize, Clone, Debug)]
 #[serde(default)]
 pub struct Config {

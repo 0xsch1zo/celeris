@@ -25,6 +25,7 @@ fn layout_from_options(
     Ok(Layout::new(name))
 }
 
+// FIXME: will shit it self, when it tries to switch to a purely runtime session not a layout
 struct LastSessionManager;
 
 impl LastSessionManager {

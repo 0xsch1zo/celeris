@@ -23,33 +23,33 @@ pub struct Cli {
 #[derive(Subcommand)]
 pub enum Commands {
     /// Find repos on search roots declared in the config
-    FindRepos,
-    /// List configured sessions
-    ListSessions {
+    Search,
+    /// List configured and/or active sessions
+    List {
         #[command(flatten)]
         opts: ListSessionsOptions,
     },
-    /// Create a session config and open in $EDITOR
-    NewSession {
+    /// Create a layout and open it in $EDITOR
+    New {
         /// Root path of a session. By default the name is deduced automatically
         path: PathBuf,
-        /// Set custom name for a session
+        /// Set custom name for a layout
         #[arg(short, long)]
         name: Option<String>,
     },
-    /// Edit an existing session config
-    EditSession {
-        /// Name of the session to be edited
+    /// Edit an existing layout
+    Edit {
+        /// Name of the layout to be edited
         name: String,
     },
-    /// Switch to a running session if exists or load it from the config
+    /// Switch to a running session if exists or load the layout
     Switch {
         #[command(flatten)]
         target: CliSwitchTarget,
     },
-    /// Remove a session configuration
-    RemoveSession {
-        /// Name of the session to be removed
+    /// Remove a layout
+    Remove {
+        /// Name of the layout to be removed
         name: String,
     },
 }
@@ -57,10 +57,10 @@ pub enum Commands {
 #[derive(Args)]
 #[group(required = true, multiple = false)]
 pub struct CliSwitchTarget {
-    /// Switch to last session. Name mustn't be supplied when this flag is passed
+    /// Switch to the last loaded layout. Name mustn't be supplied when this flag is passed
     #[arg(short, long)]
     last_session: bool,
-    /// Name of the session to switch into
+    /// Name of the running session/predefined layout to switch into
     name: Option<String>,
 }
 
@@ -98,11 +98,9 @@ impl Into<MgrListSessionsOptions> for ListSessionsOptions {
 pub struct ListSessionsConflicting {
     /// Include currently active tmux session in the listing(if exists). Signified with an asterisk
     /// at the end
-    /// before the name
     #[arg(short, long)]
     include_active: bool,
-    /// Exclude currently running tmux sessions. Sessions will always be loaded from the
-    /// config.
+    /// Exclude currently running tmux sessions
     #[arg(short, long)]
     exclude_running: bool,
 }
