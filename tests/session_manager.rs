@@ -107,7 +107,7 @@ struct TestData {
 }
 
 #[test]
-fn basic_switch() -> Result<()> {
+fn comp_test() -> Result<()> {
     unsafe {
         env::set_var("SESH_TMUX_SOCKET_NAME", "__sesh_testing");
     }
@@ -117,12 +117,12 @@ fn basic_switch() -> Result<()> {
     let test_data = TestData {
         session_root: env::temp_dir(),
     };
-    let layout_str = handlebars.render("session_with_root", &test_data)?;
-    common::new_layout("session_with_root", &layout_str, dir_mgr.as_ref())?;
+    let layout_str = handlebars.render("comptest", &test_data)?;
+    common::new_layout("comptest", &layout_str, dir_mgr.as_ref())?;
     let session_manager = common::test_session_manager(Arc::clone(dir_mgr.inner()))?;
-    session_manager.switch(SwitchTarget::Session("session_with_root".to_owned()))?;
+    session_manager.switch(SwitchTarget::Session("comptest".to_owned()))?;
     assert_eq!(
-        Session::list_sessions()?.contains(&"session_with_root".to_owned()),
+        Session::list_sessions()?.contains(&"comptest".to_owned()),
         true
     );
     Ok(())
