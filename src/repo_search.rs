@@ -1,11 +1,19 @@
 use crate::{config::Config, utils};
 use color_eyre::Result;
+use color_eyre::owo_colors::OwoColorize;
 use git2::Repository;
 use std::path::{Path, PathBuf};
 use walkdir::{DirEntry, WalkDir};
 
 pub fn search(config: &Config) -> Result<Vec<String>> {
-    //let mut manager = RepoManager::new();
+    if config.search_roots.is_empty() {
+        eprintln!(
+            "{}: search roots are not defined, nothing to search in",
+            "warning".yellow().bold()
+        );
+        return Ok(Vec::new());
+    }
+
     let mut repos: Vec<PathBuf> = Vec::new();
     // Side-effects were needed
     config.search_roots.iter().for_each(|root| {

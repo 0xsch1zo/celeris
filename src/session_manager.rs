@@ -9,6 +9,7 @@ use crate::utils;
 use color_eyre::Result;
 use color_eyre::eyre::OptionExt;
 use color_eyre::eyre::WrapErr;
+use color_eyre::owo_colors::OwoColorize;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -110,7 +111,10 @@ impl SessionManager {
         let tmux_name = tmux_name.to_owned();
         let active_session = Session::active_name().wrap_err("failed to get active sesion")?;
         if Some(&tmux_name) == active_session.as_ref() {
-            println!("info: session with that name is already attached. Aborting switch");
+            eprintln!(
+                "{}: session with that name is already attached. Aborting switch",
+                "info".green().bold()
+            );
             return Ok(());
         }
 

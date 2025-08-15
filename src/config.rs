@@ -6,8 +6,6 @@ use serde::Deserialize;
 use std::fs;
 use std::path::Path;
 
-// make config not mandatory, warn in repo_search
-
 #[derive(Deserialize, Clone, Debug)]
 #[serde(default)]
 pub struct Config {
@@ -50,6 +48,11 @@ impl Config {
     pub fn new(dir_mgr: &DirectoryManager) -> Result<Self> {
         const CONFIG_FILE: &'static str = "config.toml";
         let config_path = dir_mgr.config_dir()?.join(CONFIG_FILE);
+
+        if !config_path.exists() {
+            return Ok(Config::default());
+        }
+
         let config = fs::read_to_string(&config_path).wrap_err(format!(
             "main sesh config not found in path: {config_path:?}"
         ))?;
