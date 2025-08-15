@@ -39,6 +39,10 @@ impl TestDirectoryManager {
         Ok(dir_mgr)
     }
 
+    pub fn custom_template_path(&self) -> Result<PathBuf> {
+        Ok(self.config_dir()?.join("template").with_extension("lua"))
+    }
+
     pub fn repo_dir(&self) -> PathBuf {
         Self::testing_dir().join("repos")
     }
