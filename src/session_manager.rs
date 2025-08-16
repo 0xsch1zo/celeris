@@ -10,7 +10,6 @@ use color_eyre::Result;
 use color_eyre::eyre::OptionExt;
 use color_eyre::eyre::WrapErr;
 use color_eyre::owo_colors::OwoColorize;
-use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -24,29 +23,6 @@ fn layout_from_options(
         None => LayoutName::try_from_path(&path, layout_mgr)?,
     };
     Ok(Layout::new(name))
-}
-
-// FIXME: will shit it self, when it tries to switch to a purely runtime session not a layout
-struct LastLayoutManager;
-
-impl LastLayoutManager {
-    const LAST_LAYOUT_FILE: &'static str = "last_session";
-    fn save(dir_mgr: &DirectoryManager, name: &str) -> Result<()> {
-        let last_session_path = dir_mgr.cache_dir()?.join(Self::LAST_LAYOUT_FILE);
-        fs::write(last_session_path, name).wrap_err("failed to save the last session")?;
-        Ok(())
-    }
-
-    fn get(dir_mgr: &DirectoryManager) -> Result<Option<String>> {
-        let last_session_path = dir_mgr.cache_dir()?.join(Self::LAST_LAYOUT_FILE);
-        if !last_session_path.exists() {
-            return Ok(None);
-        }
-        Ok(Some(
-            fs::read_to_string(last_session_path)
-                .wrap_err("failed to retrieve saved last session")?,
-        ))
-    }
 }
 
 pub enum SwitchTarget {
@@ -66,7 +42,10 @@ impl SessionManager {
     pub fn new(config: Arc<Config>, dir_mgr: Arc<DirectoryManager>) -> Result<Self> {
         Ok(Self {
             config,
-            layout_mgr: LayoutManager::new(dir_mgr.layouts_dir()?)?,
+            layout_mgr: LayoutManager::new(
+                dir_mgr.layouts_dir().to_owned(),
+                dir_mgr.cache_dir().to_owned(),
+            )?,
             dir_mgr,
         })
     }
@@ -83,7 +62,7 @@ impl SessionManager {
         let layout = layout_from_options(name, path.clone(), &self.layout_mgr)?;
         let name = layout.tmux_name().to_owned();
         self.layout_mgr
-            .create(layout, &path, &self.config, &self.dir_mgr.config_dir()?)
+            .create(layout, &path, &self.config, self.dir_mgr.config_dir())
             .wrap_err("failed to create layout file")?;
         Ok(name) // TODO: maybe return a message
     }
@@ -102,7 +81,10 @@ impl SessionManager {
     }
 
     fn switch_last(&self) -> Result<()> {
-        let last = LastLayoutManager::get(&self.dir_mgr)?.ok_or_eyre("no last session saved")?;
+        let last = self
+            .layout_mgr
+            .get_last()?
+            .ok_or_eyre("no last session saved")?;
         self.switch_core(&last)?;
         Ok(())
     }
@@ -119,7 +101,8 @@ impl SessionManager {
         }
 
         let running_sessions = Self::running_sessions(active_session.as_ref())?;
-        LastLayoutManager::save(&self.dir_mgr, &tmux_name)
+        self.layout_mgr
+            .save_if_layout(&tmux_name)
             .wrap_err("failed to save session name for later use")?;
         if running_sessions.contains(&tmux_name) {
             let session = Session::from(&tmux_name)?;
@@ -141,7 +124,7 @@ impl SessionManager {
 
     fn run(&self, tmux_name: &str) -> Result<()> {
         let layout = self.layout(tmux_name)?;
-        script::run(layout, &self.dir_mgr.layouts_dir()?).wrap_err(format!(
+        script::run(layout, self.dir_mgr.layouts_dir()).wrap_err(format!(
             "an error occured while exucting the layout file: {tmux_name}"
         ))?;
         Ok(())

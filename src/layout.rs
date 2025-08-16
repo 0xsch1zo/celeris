@@ -142,9 +142,12 @@ impl Layout {
 pub struct LayoutManager {
     core: core::LayoutManager,
     layouts_dir: PathBuf,
+    cache_dir: PathBuf,
 }
 
 impl LayoutManager {
+    const LAYOUT_CACHE: &'static str = "last_session";
+
     pub fn enumerate_layouts(layouts_dir: &Path) -> Result<Vec<core::Layout>, Error> {
         let paths: Vec<PathBuf> = WalkDir::new(layouts_dir)
             .into_iter()
@@ -168,10 +171,14 @@ impl LayoutManager {
             .try_collect()?)
     }
 
-    pub fn new(layouts_dir: PathBuf) -> Result<Self, Error> {
+    pub fn new(layouts_dir: PathBuf, cache_dir: PathBuf) -> Result<Self, Error> {
         let layouts = Self::enumerate_layouts(&layouts_dir)?;
         let core = core::LayoutManager::new(layouts);
-        Ok(Self { core, layouts_dir })
+        Ok(Self {
+            core,
+            layouts_dir,
+            cache_dir,
+        })
     }
 
     // delegate the pure ones that don't ned conversion
@@ -245,6 +252,27 @@ impl LayoutManager {
             .status()
             .map_err(|e| Error::FailedCommand(editor, e))?;
         Ok(())
+    }
+
+    pub fn save_if_layout(&self, name: &str) -> Result<(), Error> {
+        if !self.core.contains(name) {
+            return Ok(());
+        }
+        let last_session_path = self.cache_dir.join(Self::LAYOUT_CACHE);
+        fs::write(last_session_path, name).map_err(|e| {
+            Error::FSOperationFaiure("failed to save the last session".to_owned(), e)
+        })?;
+        Ok(())
+    }
+
+    pub fn get_last(&self) -> Result<Option<String>, Error> {
+        let last_session_path = self.cache_dir.join(Self::LAYOUT_CACHE);
+        if !last_session_path.exists() {
+            return Ok(None);
+        }
+        Ok(Some(fs::read_to_string(last_session_path).map_err(
+            |e| Error::FSOperationFaiure("failed to retrieve saved last session".to_owned(), e),
+        )?))
     }
 }
 
