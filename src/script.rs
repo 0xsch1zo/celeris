@@ -10,10 +10,10 @@ use crate::layout::Layout;
 
 pub fn run(layout: &Layout, layouts_dir: &Path) -> eyre::Result<()> {
     let lua = Lua::new();
-    lua.set_named_registry_value("SESH_SESSION_NAME", layout.tmux_name())?;
+    lua.set_named_registry_value("CELERIS_SESSION_NAME", layout.tmux_name())?;
 
     let mut api = lua.create_table()?;
-    lua.register_module("sesh", &api)?;
+    lua.register_module("celeris", &api)?;
 
     session::register(&lua, &mut api)?;
     window::register(&lua, &mut api)?;

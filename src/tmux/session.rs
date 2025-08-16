@@ -341,8 +341,8 @@ mod tests {
 
     #[test]
     fn list_sessions() -> Result<()> {
-        let session_name_1 = "__sesh_testing_1";
-        let session_name_2 = "__sesh_testing_2";
+        let session_name_1 = "__celeris_testing_1";
+        let session_name_2 = "__celeris_testing_2";
         let _session1 = SessionBuilder::new(session_name_1.to_owned()).build()?; // to stop the session
         // from being dropped
         let _session2 = SessionBuilder::new(session_name_2.to_lowercase()).build()?;

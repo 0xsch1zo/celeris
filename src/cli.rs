@@ -9,11 +9,11 @@ use std::path::PathBuf;
 #[command(propagate_version = true)]
 pub struct Cli {
     /// Set a custom directory where the main session and scripts are stored
-    #[arg(short = 'c', long, env = "SESH_CONFIG_DIR")]
+    #[arg(short = 'c', long, env = "CELERIS_CONFIG_DIR")]
     pub config_dir: Option<PathBuf>,
 
     /// Set a custom directory where last session opened is cached
-    #[arg(short = 'a', long, env = "SESH_CACHE_DIR")]
+    #[arg(short = 'a', long, env = "CELERIS_CACHE_DIR")]
     pub cache_dir: Option<PathBuf>,
 
     #[command(subcommand)]

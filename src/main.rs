@@ -1,11 +1,11 @@
+use celeris::cli::{Cli, Commands};
+use celeris::config::Config;
+use celeris::directory_manager::DirectoryManager;
+use celeris::repo_search;
+use celeris::session_manager::SessionManager;
 use clap::Parser;
 use color_eyre::Result;
 use color_eyre::eyre::Context;
-use sesh::cli::{Cli, Commands};
-use sesh::config::Config;
-use sesh::directory_manager::DirectoryManager;
-use sesh::repo_search;
-use sesh::session_manager::SessionManager;
 use std::io::{self, Write};
 use std::sync::Arc;
 

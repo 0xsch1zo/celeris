@@ -99,7 +99,7 @@ mod tests {
     fn window_options() -> Result<()> {
         let lua = Lua::new();
         let handlebars = Handlebars::new();
-        let session = TmuxSessionBuilder::new("__sesh_testing_lua".to_owned())
+        let session = TmuxSessionBuilder::new("__celeris_testing_lua".to_owned())
             .build()
             .into_lua_err()?;
 

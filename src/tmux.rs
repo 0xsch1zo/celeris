@@ -27,8 +27,8 @@ pub use window::{Window, WindowBuilder};
 fn tmux() -> Result<Command> {
     let mut command = Command::new("tmux");
     match (
-        env::var("SESH_TMUX_SOCKET_NAME"),
-        env::var("SESH_TMUX_SOCKET_PATH"),
+        env::var("CELERIS_TMUX_SOCKET_NAME"),
+        env::var("CELERIS_TMUX_SOCKET_PATH"),
     ) {
         (Ok(ref name), Err(VarError::NotPresent)) => command.args(["-L", name]),
         (Err(VarError::NotPresent), Ok(ref path)) => command.args(["-S", path]),

@@ -1,6 +1,9 @@
 #[allow(dead_code)]
 mod common;
 
+use celeris::config::Config;
+use celeris::session_manager::SwitchTarget;
+use celeris::session_manager::{ListSessionsOptions, SessionManager};
 use color_eyre::eyre::eyre;
 use color_eyre::{Result, eyre::Context};
 use common::TestDirectoryManager;
@@ -8,9 +11,6 @@ use handlebars::Handlebars;
 use itertools::Itertools;
 use rust_embed::Embed;
 use serde::Serialize;
-use sesh::config::Config;
-use sesh::session_manager::SwitchTarget;
-use sesh::session_manager::{ListSessionsOptions, SessionManager};
 use std::fs::File;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, mpsc};
@@ -62,7 +62,7 @@ fn list_sessions() -> Result<()> {
 #[test]
 fn list_sessions_active() -> Result<()> {
     unsafe {
-        env::set_var("SESH_TMUX_SOCKET_NAME", "__sesh_testing");
+        env::set_var("CELERIS_TMUX_SOCKET_NAME", "__celeris_testing");
     }
 
     let dir_mgr = TestDirectoryManager::new()?;
@@ -73,7 +73,7 @@ fn list_sessions_active() -> Result<()> {
 
     let dummy_layouts = ["test1", "test2", "test3"];
     common::create_dummy_layouts(&dummy_layouts, dir_mgr.as_ref())?;
-    let mut session_manager = SessionManager::new(config, Arc::clone(&dir_mgr.inner()))?;
+    let mut session_manager = SessionManager::new(config, Arc::clone(dir_mgr.inner()))?;
 
     let active_layouts = ["active_test", "active_test2", "active_test3"]
         .into_iter()
@@ -273,7 +273,7 @@ fn last_session() -> Result<()> {
 #[test]
 fn comp_test() -> Result<()> {
     unsafe {
-        env::set_var("SESH_TMUX_SOCKET_NAME", "__sesh_testing");
+        env::set_var("CELERIS_TMUX_SOCKET_NAME", "__celeris_testing");
     }
     let dir_mgr = TestDirectoryManager::new()?;
     let mut handlebars = Handlebars::new();

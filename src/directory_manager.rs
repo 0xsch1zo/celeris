@@ -32,7 +32,7 @@ impl error::Error for Error {
     }
 }
 
-const PROJECT_DIR_NAME: &'static str = "sesh";
+const PROJECT_DIR_NAME: &'static str = "celeris";
 
 #[derive(Debug)]
 pub struct DirectoryManager {

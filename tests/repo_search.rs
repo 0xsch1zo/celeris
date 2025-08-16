@@ -2,14 +2,14 @@
 mod common;
 
 use crate::common::TestDirectoryManager;
+use celeris::{
+    config::{Config, SearchRoot},
+    repo_search,
+};
 use color_eyre::Result;
 use color_eyre::eyre::Context;
 use git2::Repository;
 use itertools::Itertools;
-use sesh::{
-    config::{Config, SearchRoot},
-    repo_search,
-};
 use std::iter;
 use std::path::Path;
 use std::{fs, path::PathBuf};

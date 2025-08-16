@@ -1,3 +1,3 @@
-local sesh = require("sesh")
+local celeris = require("celeris")
 
-sesh.Session.new({})
+celeris.Session.new({})

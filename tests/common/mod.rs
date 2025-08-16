@@ -1,7 +1,9 @@
+use celeris::{
+    config::Config, directory_manager::DirectoryManager, session_manager::SessionManager,
+};
 use color_eyre::{Result, eyre::Context};
 use delegate::delegate;
 use itertools::Itertools;
-use sesh::{config::Config, directory_manager::DirectoryManager, session_manager::SessionManager};
 use std::{
     env,
     fs::{self, File},
@@ -13,7 +15,7 @@ pub struct TestDirectoryManager(Arc<DirectoryManager>);
 
 impl TestDirectoryManager {
     fn testing_dir() -> PathBuf {
-        env::temp_dir().join("sesh_test")
+        env::temp_dir().join("celeris_test")
     }
 
     pub fn new() -> Result<Self> {

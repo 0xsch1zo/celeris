@@ -37,7 +37,7 @@ pub struct Session {
 impl Session {
     fn try_new(ctx: &Lua, opts: SessionOptions) -> Result<Session> {
         let session_name: String = ctx
-            .named_registry_value("SESH_SESSION_NAME")
+            .named_registry_value("CELERIS_SESSION_NAME")
             .wrap_err("failed to get session name from the lua registry")
             .into_lua_err()?;
 

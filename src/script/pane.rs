@@ -110,7 +110,6 @@ impl Pane {
 
 impl UserData for Pane {
     fn add_methods<M: mlua::UserDataMethods<Self>>(methods: &mut M) {
-        // TODO: constider making static, something like sesh.Pane.split()
         methods.add_method("split", Pane::split);
         methods.add_method("select", Pane::select);
         methods.add_method("run_command", Pane::run_command);
@@ -150,7 +149,7 @@ mod tests {
     fn split_options() -> Result<()> {
         let lua = Lua::new();
         let handlebars = Handlebars::new();
-        let session = TmuxSessionBuilder::new("__sesh_testing_lua".to_owned())
+        let session = TmuxSessionBuilder::new("__celeris_testing_lua".to_owned())
             .build()
             .into_lua_err()?;
         let window = TmuxWindowBuilder::new(session).build().into_lua_err()?;

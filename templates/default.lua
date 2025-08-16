@@ -1,14 +1,14 @@
-local sesh = require("sesh")
+local celeris = require("celeris")
 
 local session_root = "{{session_root}}";
 
 -- Create a session
-local session = sesh.Session.new({
+local session = celeris.Session.new({
     root = session_root -- the root is the working directory in which the session will start in
 })
 
 -- Create a named window
-local window = sesh.Window.new(session, {
+local window = celeris.Window.new(session, {
     -- name = "<window_name>" -- name of the window
     -- root = "<window_root>" -- window's working directory
 })

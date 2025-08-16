@@ -27,18 +27,18 @@ fn layout_from_options(
 }
 
 // FIXME: will shit it self, when it tries to switch to a purely runtime session not a layout
-struct LastSessionManager;
+struct LastLayoutManager;
 
-impl LastSessionManager {
-    const LAST_SESSION_FILE: &'static str = "last_session";
+impl LastLayoutManager {
+    const LAST_LAYOUT_FILE: &'static str = "last_session";
     fn save(dir_mgr: &DirectoryManager, name: &str) -> Result<()> {
-        let last_session_path = dir_mgr.cache_dir()?.join(Self::LAST_SESSION_FILE);
+        let last_session_path = dir_mgr.cache_dir()?.join(Self::LAST_LAYOUT_FILE);
         fs::write(last_session_path, name).wrap_err("failed to save the last session")?;
         Ok(())
     }
 
     fn get(dir_mgr: &DirectoryManager) -> Result<Option<String>> {
-        let last_session_path = dir_mgr.cache_dir()?.join(Self::LAST_SESSION_FILE);
+        let last_session_path = dir_mgr.cache_dir()?.join(Self::LAST_LAYOUT_FILE);
         if !last_session_path.exists() {
             return Ok(None);
         }
@@ -102,7 +102,7 @@ impl SessionManager {
     }
 
     fn switch_last(&self) -> Result<()> {
-        let last = LastSessionManager::get(&self.dir_mgr)?.ok_or_eyre("no last session saved")?;
+        let last = LastLayoutManager::get(&self.dir_mgr)?.ok_or_eyre("no last session saved")?;
         self.switch_core(&last)?;
         Ok(())
     }
@@ -119,7 +119,7 @@ impl SessionManager {
         }
 
         let running_sessions = Self::running_sessions(active_session.as_ref())?;
-        LastSessionManager::save(&self.dir_mgr, &tmux_name)
+        LastLayoutManager::save(&self.dir_mgr, &tmux_name)
             .wrap_err("failed to save session name for later use")?;
         if running_sessions.contains(&tmux_name) {
             let session = Session::from(&tmux_name)?;

@@ -258,6 +258,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "celeris"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "color-eyre",
+ "delegate",
+ "dirs",
+ "git2",
+ "handlebars",
+ "itertools",
+ "md5",
+ "mlua",
+ "ref-cast",
+ "rust-embed",
+ "sanitize-filename",
+ "serde",
+ "test-with",
+ "toml",
+ "walkdir",
+]
+
+[[package]]
 name = "cfg-if"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2104,28 +2126,6 @@ dependencies = [
  "itoa",
  "ryu",
  "serde",
-]
-
-[[package]]
-name = "sesh"
-version = "0.1.0"
-dependencies = [
- "clap",
- "color-eyre",
- "delegate",
- "dirs",
- "git2",
- "handlebars",
- "itertools",
- "md5",
- "mlua",
- "ref-cast",
- "rust-embed",
- "sanitize-filename",
- "serde",
- "test-with",
- "toml",
- "walkdir",
 ]
 
 [[package]]

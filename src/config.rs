@@ -54,7 +54,7 @@ impl Config {
         }
 
         let config = fs::read_to_string(&config_path).wrap_err(format!(
-            "main sesh config not found in path: {config_path:?}"
+            "failed to read main celeris config: {config_path:?}"
         ))?;
         let config: Config = toml::from_str(&config).wrap_err("parsing error")?;
         Self::validate_config(&config)?;

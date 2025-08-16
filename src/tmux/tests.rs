@@ -2,7 +2,7 @@ use super::*;
 use crate::tmux;
 use crate::tmux::session::{Session, SessionBuilder};
 use std::sync::Arc;
-pub const TESTING_SESSION: &str = "__sesh_testing";
+pub const TESTING_SESSION: &str = "__celeris_testing";
 
 impl Session {
     pub fn kill(&self) -> Result<()> {
