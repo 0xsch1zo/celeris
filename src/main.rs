@@ -14,14 +14,15 @@ fn main() -> Result<()> {
         .display_env_section(false)
         .install()?;
     let cli = Cli::parse();
-    let mut dir_mgr = DirectoryManager::new();
+    let mut dir_mgr_builder = DirectoryManager::builder();
     if let Some(config_dir) = cli.config_dir {
-        dir_mgr.set_config_dir(config_dir)?;
+        dir_mgr_builder.config_dir(config_dir)?;
     }
 
     if let Some(cache_dir) = cli.cache_dir {
-        dir_mgr.set_cache_dir(cache_dir)?;
+        dir_mgr_builder.cache_dir(cache_dir)?;
     }
+    let dir_mgr = dir_mgr_builder.build()?;
 
     let config = Arc::new(Config::new(&dir_mgr)?);
     let mut session_manager = SessionManager::new(Arc::clone(&config), Arc::new(dir_mgr))?;

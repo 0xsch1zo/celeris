@@ -47,7 +47,7 @@ pub enum PathType {
 impl Config {
     pub fn new(dir_mgr: &DirectoryManager) -> Result<Self> {
         const CONFIG_FILE: &'static str = "config.toml";
-        let config_path = dir_mgr.config_dir()?.join(CONFIG_FILE);
+        let config_path = dir_mgr.config_dir().join(CONFIG_FILE);
 
         if !config_path.exists() {
             return Ok(Config::default());
