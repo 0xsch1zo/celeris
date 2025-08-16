@@ -268,6 +268,7 @@ dependencies = [
  "git2",
  "handlebars",
  "itertools",
+ "libtest-with",
  "md5",
  "mlua",
  "ref-cast",
@@ -578,6 +579,12 @@ dependencies = [
  "libc",
  "windows-sys 0.60.2",
 ]
+
+[[package]]
+name = "escape8259"
+version = "0.5.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5692dd7b5a1978a5aeb0ce83b7655c58ca8efdcb79d21036ea249da95afec2c6"
 
 [[package]]
 name = "eyre"
@@ -1198,6 +1205,18 @@ dependencies = [
  "openssl-sys",
  "pkg-config",
  "vcpkg",
+]
+
+[[package]]
+name = "libtest-with"
+version = "0.8.1-10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9ed87a72c2def30dd0a66f14299187ece1d7a3667ecd6ee76ef249842d0c7858"
+dependencies = [
+ "anstream",
+ "anstyle",
+ "clap",
+ "escape8259",
 ]
 
 [[package]]

@@ -22,9 +22,10 @@ sanitize-filename = "0.6.0"
 mlua = { version = "0.11.1", features = ["luajit", "userdata-wrappers", "error-send", "serde", "macros"] }
 handlebars = { version = "6.3.2", features = ["rust-embed"] }
 rust-embed = "8.7.2"
+libtest-with = "0.8.1-10"
 
 [dev-dependencies]
-test-with = "0.15.2"
+test-with = { version = "0.15.2", features = ["runtime"] }
 
 [[test]]
 name = "session_manager"

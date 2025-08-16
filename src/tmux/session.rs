@@ -257,6 +257,8 @@ pub fn register_window(session: &Session, window: &WindowCore) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use std::env::VarError;
+
     use super::*;
     use crate::tmux::session::{Session, TmuxExecuteExt};
     use crate::tmux::{Window, tests::*};
@@ -331,21 +333,6 @@ mod tests {
     }
 
     #[test]
-    fn active_name() -> Result<()> {
-        let session = testing_session()?;
-        session.attach()?;
-        let Some(active_name) = Session::active_name()? else {
-            panic!("active_name claimed that session is not attached")
-        };
-
-        let output = tmux()?
-            .args(["display-message", "-p", "#{client_session}"])
-            .execute()?;
-        assert_eq!(active_name, output.trim());
-        Ok(())
-    }
-
-    #[test]
     fn list_sessions() -> Result<()> {
         let session_name_1 = "__celeris_testing_1";
         let session_name_2 = "__celeris_testing_2";
@@ -407,6 +394,35 @@ mod tests {
         Ok(())
     }
 
+    fn check_nextest_bare() -> Option<String> {
+        match env::var("TMUX") {
+            Ok(_) => None,
+            Err(env::VarError::NotPresent) => match env::var("NEXTEST") {
+                Ok(_) => Some("can't run nextest in non tmux environment".to_owned()),
+                Err(VarError::NotPresent) => None,
+                Err(e) => panic!("invalid unicode in $NEXTEST: {e}"),
+            },
+            Err(e) => panic!("invalid unicode in $NEXTEST: {e}"),
+        }
+    }
+
+    #[test_with::env(TMUX)]
+    #[test]
+    fn active_name() -> Result<()> {
+        println!("{:?}", check_nextest_bare());
+        let session = testing_session()?;
+        session.attach()?;
+        let Some(active_name) = Session::active_name()? else {
+            panic!("active_name claimed that session is not attached")
+        };
+
+        let output = tmux()?
+            .args(["display-message", "-p", "#{client_session}"])
+            .execute()?;
+        assert_eq!(active_name, output.trim());
+        Ok(())
+    }
+
     #[test_with::env(TMUX)]
     #[test]
     fn attach_in_tmux() -> Result<()> {
@@ -417,6 +433,10 @@ mod tests {
     #[test_with::no_env(TMUX)]
     #[test]
     fn attach_not_in_tmux() -> Result<()> {
+        if check_nextest_bare().is_some() {
+            // WARNING SKIPPING TEST DUE TO NEXTEST
+            return Ok(());
+        }
         attach_test(TerminalState::Normal)?;
         Ok(())
     }
