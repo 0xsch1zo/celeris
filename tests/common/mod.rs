@@ -7,7 +7,7 @@ use itertools::Itertools;
 use std::{
     env,
     fs::{self, File},
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::Arc,
 };
 
@@ -28,10 +28,10 @@ impl TestDirectoryManager {
         let config_dir = testing_dir.join("config");
         fs::create_dir(&config_dir).wrap_err("failed to create config dir")?;
 
-        let mut directory_manager = DirectoryManager::new();
-        directory_manager
-            .set_cache_dir(cache_dir)?
-            .set_config_dir(config_dir)?;
+        let directory_manager = DirectoryManager::builder()
+            .cache_dir(cache_dir)?
+            .config_dir(config_dir)?
+            .build()?;
 
         let dir_mgr = Self(Arc::new(directory_manager));
 
@@ -42,7 +42,7 @@ impl TestDirectoryManager {
     }
 
     pub fn custom_template_path(&self) -> Result<PathBuf> {
-        Ok(self.config_dir()?.join("template").with_extension("lua"))
+        Ok(self.config_dir().join("template").with_extension("lua"))
     }
 
     pub fn repo_dir(&self) -> PathBuf {
@@ -55,10 +55,8 @@ impl TestDirectoryManager {
 
     delegate! {
         to self.0 {
-            #[expr(Ok($?))]
-            pub fn config_dir(&self) -> Result<PathBuf>;
-            #[expr(Ok($?))]
-            pub fn layouts_dir(&self) -> Result<PathBuf>;
+            pub fn config_dir(&self) -> &Path;
+            pub fn layouts_dir(&self) -> &Path;
         }
     }
 }
@@ -85,7 +83,7 @@ pub fn create_dummy_layouts(names: &[&str], dir_mgr: &DirectoryManager) -> Resul
         .into_iter()
         .map(|name| -> Result<File> {
             Ok(File::create_new(
-                dir_mgr.layouts_dir()?.join(name).with_extension("lua"),
+                dir_mgr.layouts_dir().join(name).with_extension("lua"),
             )?)
         })
         .try_collect()?;
@@ -98,7 +96,7 @@ pub fn new_layout(
     dir_mgr: &DirectoryManager,
 ) -> Result<()> {
     let layout_path = dir_mgr
-        .layouts_dir()?
+        .layouts_dir()
         .join(layout_name)
         .with_extension("lua");
     fs::write(layout_path, layout_contents).wrap_err("failed to write layout contents")?;

@@ -61,7 +61,7 @@ fn basic_search() -> Result<()> {
 #[test]
 fn search_with_config() -> Result<()> {
     let dir_mgr = TestDirectoryManager::new()?;
-    let config_path = dir_mgr.config_dir()?.join("config.toml");
+    let config_path = dir_mgr.config_dir().join("config.toml");
     let config = format!(
         r#"
 [[search_roots]]

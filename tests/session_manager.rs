@@ -86,7 +86,7 @@ fn list_sessions_active() -> Result<()> {
         Ok(())
     })?;
 
-    let layouts_dir = dir_mgr.layouts_dir()?;
+    let layouts_dir = dir_mgr.layouts_dir();
     active_layouts.iter().try_for_each(|layout| {
         fs::write(
             layouts_dir.join(layout).with_extension("lua"),
@@ -126,7 +126,7 @@ fn remove_session() -> Result<()> {
     let mut session_manager = common::test_session_manager(Arc::clone(dir_mgr.inner()))?;
     let layout_path = dir_mgr
         .as_ref()
-        .layouts_dir()?
+        .layouts_dir()
         .join("test")
         .with_extension("lua");
 
@@ -149,7 +149,7 @@ fn remove_session() -> Result<()> {
 fn new_session() -> Result<()> {
     let dir_mgr = TestDirectoryManager::new()?;
     let session_manager = Mutex::new(common::test_session_manager(Arc::clone(dir_mgr.inner()))?);
-    let layout_path = dir_mgr.layouts_dir()?.join("test");
+    let layout_path = dir_mgr.layouts_dir().join("test");
     File::create_new(&layout_path).wrap_err("failed to create layout's target")?;
     let layout_path_c = layout_path.clone();
     let (err_tx, err_rx) = mpsc::channel();
@@ -191,7 +191,7 @@ fn new_session_default_template() -> Result<()> {
     let mut session_manager = SessionManager::new(config, Arc::clone(dir_mgr.inner()))?;
     session_manager.create(Some("test".to_owned()), layout_data.session_root.clone())?;
 
-    let layout_path = dir_mgr.layouts_dir()?.join("test").with_extension("lua");
+    let layout_path = dir_mgr.layouts_dir().join("test").with_extension("lua");
     let template = fs::read_to_string(&layout_path)?;
     assert!(template.is_empty());
     session_manager.remove("test")?;
@@ -231,7 +231,7 @@ fn new_session_custom_template() -> Result<()> {
     let mut session_manager = SessionManager::new(config, Arc::clone(dir_mgr.inner()))?;
     session_manager.create(Some("test".to_owned()), layout_data.session_root.clone())?;
 
-    let layout_path = dir_mgr.layouts_dir()?.join("test").with_extension("lua");
+    let layout_path = dir_mgr.layouts_dir().join("test").with_extension("lua");
     let template_got = fs::read_to_string(&layout_path)?;
     assert!(template_got.is_empty());
     session_manager.remove("test")?;

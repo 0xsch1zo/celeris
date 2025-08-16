@@ -1,6 +1,7 @@
 use crate::tmux::RootOptions;
+#[allow(unused)]
 use crate::tmux::{
-    self, Root, SessionTarget, TerminalState, TmuxExecuteExt, WindowTarget, tmux,
+    self, Root, SessionTarget, Target, TerminalState, TmuxExecuteExt, WindowTarget, tmux,
     window::WindowCore,
 };
 use crate::utils;
@@ -115,7 +116,8 @@ impl Session {
     }
 
     pub fn from(session_identifier: &str) -> Result<Arc<Session>> {
-        if !tmux::target_exists(&SessionTarget::new(session_identifier))? {
+        let session_identifier = format!("{session_identifier}:");
+        if !tmux::target_exists(&SessionTarget::new(&session_identifier))? {
             return Err(eyre!("session: {session_identifier}, doesn't exist"));
         }
 
@@ -125,7 +127,7 @@ impl Session {
                 "display-message",
                 "-p",
                 "-t",
-                session_identifier,
+                &session_identifier,
                 &format!(
                     "{}{}{}{}{}",
                     "#{window_id}", DELIM, "#{session_id}", DELIM, "#{session_windows}"
@@ -171,7 +173,6 @@ impl Session {
             return Ok(None);
         }
 
-        // FIXME: client_session
         let output = tmux()?
             .args(["display-message", "-p", "#{client_session}"])
             .execute()?;
@@ -258,17 +259,22 @@ pub fn register_window(session: &Session, window: &WindowCore) -> Result<()> {
 mod tests {
     use super::*;
     use crate::tmux::session::{Session, TmuxExecuteExt};
-    use crate::tmux::tests::*;
+    use crate::tmux::{Window, tests::*};
     use color_eyre::Result;
 
     #[test]
     fn from() -> Result<()> {
         let session = testing_session()?;
-        let session_from = Session::from(&session.target.session_id)?;
+        let _window_dummy = Window::builder(&session)
+            .name("__celeris_testing_dummy".to_owned())
+            .build()?;
+
+        let session_from = Session::from(TESTING_SESSION)?;
         let output = tmux::targeted_command(&session_from.target, "display-message")?
             .args(["-p", "test"])
             .execute()?;
         assert_eq!(output.trim(), "test");
+        assert_eq!(session_from.target.get(), session.target.get());
         session.kill()?;
         Ok(())
     }
