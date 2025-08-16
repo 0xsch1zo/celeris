@@ -18,3 +18,7 @@ test-group = "integration"
 [[profile.default.overrides]]
 filter = "binary(repo_search)"
 test-group = "integration"
+
+[[profile.default.overrides]]
+filter = "binary(config)"
+test-group = "integration"

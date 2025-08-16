@@ -2,11 +2,11 @@ use crate::directory_manager::DirectoryManager;
 use color_eyre::eyre::Context;
 use color_eyre::{Result, eyre};
 use eyre::eyre;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
 
-#[derive(Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(default)]
 pub struct Config {
     pub editor: Option<String>,
@@ -32,7 +32,7 @@ impl Default for Config {
     }
 }
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SearchRoot {
     pub path: String,
     pub depth: Option<usize>,
@@ -50,7 +50,12 @@ impl Config {
         let config_path = dir_mgr.config_dir().join(CONFIG_FILE);
 
         if !config_path.exists() {
-            return Ok(Config::default());
+            let config = Config::default();
+            let config_str =
+                toml::to_string_pretty(&config).wrap_err("failed to serialize default config")?;
+            fs::write(&config_path, config_str)
+                .wrap_err_with(|| format!("failed to write to: {config_path:?}"))?;
+            return Ok(config);
         }
 
         let config = fs::read_to_string(&config_path).wrap_err(format!(
