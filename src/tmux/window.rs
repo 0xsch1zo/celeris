@@ -81,10 +81,12 @@ impl WindowBuilder {
     }
 
     fn prepare_root(&self, options: &mut Vec<String>) -> Result<()> {
-        let RootOptions::Custom(path) = self.opts.root.as_ref() else {
-            return Ok(());
+        let root = match self.opts.root.as_ref() {
+            RootOptions::Custom(path) => utils::path_to_string(path)?,
+            RootOptions::Default => "#{pane_current_path}".to_owned(), // should inherit context
+                                                                       // from our session not env
         };
-        options.extend(["-c".to_owned(), utils::path_to_string(path)?]);
+        options.extend(["-c".to_owned(), root]);
         Ok(())
     }
 
@@ -296,6 +298,20 @@ mod tests {
             .args(["-p", "#{pane_current_command}"])
             .execute()?;
         assert_eq!(output.trim(), real_command);
+        Ok(())
+    }
+
+    #[test]
+    fn root_inheritance() -> Result<()> {
+        let root = env::temp_dir();
+        let session = Session::builder(TESTING_SESSION.to_owned())
+            .root(root.clone())?
+            .build()?;
+        let window = Window::builder(&session).build()?;
+        let output = tmux::targeted_command(window.target(), "display-message")?
+            .args(["-p", "#{pane_current_path}"])
+            .execute()?;
+        assert_eq!(root.to_string_lossy(), output.trim());
         Ok(())
     }
 

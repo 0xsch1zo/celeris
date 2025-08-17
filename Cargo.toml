@@ -3,6 +3,9 @@ name = "celeris"
 version = "0.1.0"
 edition = "2024"
 
+[[bin]]
+name = "celeris"
+
 [features]
 integration_test = []
 
@@ -30,3 +33,4 @@ test-with = { version = "0.15.2", features = ["runtime"] }
 [[test]]
 name = "session_manager"
 required-features = ["integration_test"]
+

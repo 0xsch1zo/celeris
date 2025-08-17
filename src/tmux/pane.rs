@@ -67,6 +67,7 @@ impl SplitBuilder {
         Ok(options)
     }
 
+    // requires tmxu 3.1 and up
     fn prepare_size(&self, options: &mut Vec<String>) -> Result<()> {
         let Some(size) = self.opts.size else {
             return Ok(());
@@ -88,11 +89,12 @@ impl SplitBuilder {
     }
 
     fn prepare_root(&self, options: &mut Vec<String>) -> Result<()> {
-        let RootOptions::Custom(path) = self.opts.root.as_ref() else {
-            return Ok(());
+        let root = match self.opts.root.as_ref() {
+            RootOptions::Custom(path) => utils::path_to_string(path)?,
+            RootOptions::Default => "#{pane_current_path}".to_owned(),
         };
 
-        options.extend(["-c".to_owned(), utils::path_to_string(path)?]);
+        options.extend(["-c".to_owned(), root]);
         Ok(())
     }
 
@@ -162,6 +164,8 @@ impl Pane {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tmux::Session;
+    use crate::tmux::tests::TESTING_SESSION;
     use crate::tmux::{Target, Window, tests::testing_session};
     use std::env;
     use std::{thread, time::Duration};
@@ -253,6 +257,21 @@ mod tests {
             .execute()?;
 
         assert_eq!(output.trim(), "1");
+        Ok(())
+    }
+
+    #[test]
+    fn root_inheritance() -> Result<()> {
+        let root = env::temp_dir();
+        let session = Session::builder(TESTING_SESSION.to_owned())
+            .root(root.clone())?
+            .build()?;
+        let window = Window::builder(&session).build()?;
+        let another_pane = window.default_pane().split(Direction::Vertical).build()?;
+        let output = tmux::targeted_command(another_pane.target(), "display-message")?
+            .args(["-p", "#{pane_current_path}"])
+            .execute()?;
+        assert_eq!(root.to_string_lossy(), output.trim());
         Ok(())
     }
 

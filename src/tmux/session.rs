@@ -106,6 +106,10 @@ pub struct Session {
 }
 
 impl Session {
+    pub fn builder(session_name: String) -> SessionBuilder {
+        SessionBuilder::new(session_name)
+    }
+
     // Can't run this if in tmux session already
     fn new(target: SessionTarget, default_window_target: WindowTarget) -> Arc<Self> {
         Arc::new(Self {
