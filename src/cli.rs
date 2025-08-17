@@ -1,4 +1,6 @@
-use crate::session_manager::{ListSessionsOptions as MgrListSessionsOptions, SwitchTarget};
+use crate::session_manager::{
+    CreateSessionOptions, ListSessionsOptions as MgrListSessionsOptions, SwitchTarget,
+};
 use clap::{Args, Parser, Subcommand};
 use std::path::PathBuf;
 
@@ -30,12 +32,9 @@ pub enum Commands {
         opts: ListSessionsOptions,
     },
     /// Create a layout and open it in $EDITOR
-    New {
-        /// Root path of a session. By default the name is deduced automatically
-        path: PathBuf,
-        /// Set custom name for a layout
-        #[arg(short, long)]
-        name: Option<String>,
+    Create {
+        #[command(flatten)]
+        opts: CreateOptions,
     },
     /// Edit an existing layout
     Edit {
@@ -55,6 +54,28 @@ pub enum Commands {
 }
 
 #[derive(Args)]
+pub struct CreateOptions {
+    /// Root path of a session. By default the name is deduced automatically
+    path: PathBuf,
+    /// Set custom name for a layout
+    #[arg(short, long)]
+    name: Option<String>,
+    /// Don't open the layout file in the $EDITOR
+    #[arg(short, long)]
+    disable_editor: bool,
+}
+
+impl From<CreateOptions> for CreateSessionOptions {
+    fn from(value: CreateOptions) -> Self {
+        Self {
+            path: value.path,
+            name: value.name,
+            disable_editor: value.disable_editor,
+        }
+    }
+}
+
+#[derive(Args)]
 #[group(required = true, multiple = false)]
 pub struct CliSwitchTarget {
     /// Switch to the last loaded layout. Name mustn't be supplied when this flag is passed
@@ -64,11 +85,11 @@ pub struct CliSwitchTarget {
     name: Option<String>,
 }
 
-impl Into<SwitchTarget> for CliSwitchTarget {
-    fn into(self) -> SwitchTarget {
-        match self.last_session {
+impl From<CliSwitchTarget> for SwitchTarget {
+    fn from(value: CliSwitchTarget) -> Self {
+        match value.last_session {
             true => SwitchTarget::LastSession,
-            false => SwitchTarget::Session(self.name.unwrap()),
+            false => SwitchTarget::Session(value.name.unwrap()),
         }
     }
 }

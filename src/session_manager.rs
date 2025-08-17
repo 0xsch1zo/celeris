@@ -1,5 +1,6 @@
 use crate::config::Config;
 use crate::directory_manager::DirectoryManager;
+use crate::layout::CreateLayoutOptions;
 use crate::layout::Layout;
 use crate::layout::LayoutManager;
 use crate::layout::LayoutName;
@@ -30,22 +31,32 @@ pub enum SwitchTarget {
     Session(String),
 }
 
+#[derive(Clone)]
+pub struct CreateSessionOptions {
+    pub path: PathBuf,
+    pub name: Option<String>,
+    pub disable_editor: bool,
+}
+
+impl From<CreateSessionOptions> for CreateLayoutOptions {
+    fn from(value: CreateSessionOptions) -> Self {
+        Self {
+            disable_editor: value.disable_editor,
+        }
+    }
+}
+
 pub use list_sessions::Options as ListSessionsOptions;
 
 pub struct SessionManager {
     layout_mgr: LayoutManager,
-    config: Arc<Config>,
     dir_mgr: Arc<DirectoryManager>,
 }
 
 impl SessionManager {
     pub fn new(config: Arc<Config>, dir_mgr: Arc<DirectoryManager>) -> Result<Self> {
         Ok(Self {
-            config,
-            layout_mgr: LayoutManager::new(
-                dir_mgr.layouts_dir().to_owned(),
-                dir_mgr.cache_dir().to_owned(),
-            )?,
+            layout_mgr: LayoutManager::new(Arc::clone(&config), Arc::clone(&dir_mgr))?,
             dir_mgr,
         })
     }
@@ -57,18 +68,18 @@ impl SessionManager {
             .ok_or_eyre(format!("session not found: {}", name))?)
     }
 
-    pub fn create(&mut self, name: Option<String>, path: PathBuf) -> Result<String> {
-        let path = utils::expand_path(path)?;
-        let layout = layout_from_options(name, path.clone(), &self.layout_mgr)?;
+    pub fn create(&mut self, opts: CreateSessionOptions) -> Result<String> {
+        let path = utils::expand_path(&opts.path)?;
+        let layout = layout_from_options(opts.name.clone(), path.clone(), &self.layout_mgr)?;
         let name = layout.tmux_name().to_owned();
         self.layout_mgr
-            .create(layout, &path, &self.config, self.dir_mgr.config_dir())
+            .create(layout, &path, opts.into())
             .wrap_err("failed to create layout file")?;
         Ok(name) // TODO: maybe return a message
     }
 
     pub fn edit(&self, tmux_name: &str) -> Result<()> {
-        self.layout_mgr.edit(tmux_name, &self.config)?;
+        self.layout_mgr.edit(tmux_name)?;
         Ok(())
     }
 

@@ -34,7 +34,7 @@ fn main() -> Result<()> {
         _ => {
             let output = match cli.command {
                 Commands::Search => repo_search::search(&config)?.join("\n"),
-                Commands::New { name, path } => session_manager.create(name, path)?,
+                Commands::Create { opts } => session_manager.create(opts.into())?,
                 Commands::List { opts } => session_manager.list(opts.into())?,
                 _ => unreachable!(),
             };

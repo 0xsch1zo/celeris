@@ -2,7 +2,7 @@
 mod common;
 
 use celeris::config::Config;
-use celeris::session_manager::SwitchTarget;
+use celeris::session_manager::{CreateSessionOptions, SwitchTarget};
 use celeris::session_manager::{ListSessionsOptions, SessionManager};
 use color_eyre::eyre::eyre;
 use color_eyre::{Result, eyre::Context};
@@ -17,6 +17,8 @@ use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 use std::time::{Duration, Instant};
 use std::{env, fs};
+
+use crate::common::test_session_manager;
 
 #[derive(Embed)]
 #[folder = "templates/tests/"]
@@ -66,14 +68,9 @@ fn list_sessions_active() -> Result<()> {
     }
 
     let dir_mgr = TestDirectoryManager::new()?;
-    let config = Arc::new(Config {
-        disable_editor_on_creation: true,
-        ..Config::default()
-    });
-
     let dummy_layouts = ["test1", "test2", "test3"];
     common::create_dummy_layouts(&dummy_layouts, dir_mgr.as_ref())?;
-    let mut session_manager = SessionManager::new(config, Arc::clone(dir_mgr.inner()))?;
+    let mut session_manager = test_session_manager(Arc::clone(dir_mgr.inner()))?;
 
     let active_layouts = ["active_test", "active_test2", "active_test3"]
         .into_iter()
@@ -82,7 +79,11 @@ fn list_sessions_active() -> Result<()> {
 
     let generic_layout = TestFiles::get("generic_layout.lua").unwrap().data;
     active_layouts.iter().try_for_each(|layout| -> Result<()> {
-        session_manager.create(Some(layout.to_owned()), env::temp_dir())?;
+        session_manager.create(CreateSessionOptions {
+            name: Some(layout.to_owned()),
+            path: env::temp_dir(),
+            disable_editor: true,
+        })?;
         Ok(())
     })?;
 
@@ -155,7 +156,12 @@ fn new_session() -> Result<()> {
     let (err_tx, err_rx) = mpsc::channel();
 
     thread::spawn(move || {
-        let result = session_manager.lock().unwrap().create(None, layout_path);
+        let opts = CreateSessionOptions {
+            disable_editor: false,
+            name: None,
+            path: layout_path,
+        };
+        let result = session_manager.lock().unwrap().create(opts);
         err_tx.send(result).unwrap();
     });
 
@@ -181,30 +187,30 @@ fn new_session() -> Result<()> {
 fn new_session_default_template() -> Result<()> {
     let dir_mgr = TestDirectoryManager::new()?;
     let config = Arc::new(Config {
-        disable_editor_on_creation: true,
         disable_template: true,
         ..Config::default()
     });
     let layout_data = TestData {
         session_root: env::temp_dir(),
     };
+
+    let opts = CreateSessionOptions {
+        disable_editor: true,
+        path: layout_data.session_root.clone(),
+        name: Some("test".to_owned()),
+    };
     let mut session_manager = SessionManager::new(config, Arc::clone(dir_mgr.inner()))?;
-    session_manager.create(Some("test".to_owned()), layout_data.session_root.clone())?;
+    session_manager.create(opts.clone())?;
 
     let layout_path = dir_mgr.layouts_dir().join("test").with_extension("lua");
     let template = fs::read_to_string(&layout_path)?;
     assert!(template.is_empty());
     session_manager.remove("test")?;
 
-    let config = Arc::new(Config {
-        disable_editor_on_creation: true,
-        ..Config::default()
-    });
-
     let mut handlebars = Handlebars::new();
     handlebars.register_embed_templates_with_extension::<DefaultTemplate>(".lua")?;
-    let mut session_manager = SessionManager::new(config, Arc::clone(dir_mgr.inner()))?;
-    session_manager.create(Some("test".to_owned()), layout_data.session_root.clone())?;
+    let mut session_manager = test_session_manager(Arc::clone(dir_mgr.inner()))?;
+    session_manager.create(opts)?;
     let template = fs::read_to_string(&layout_path)?;
     assert_eq!(template, handlebars.render("default", &layout_data)?);
     Ok(())
@@ -214,34 +220,33 @@ fn new_session_default_template() -> Result<()> {
 fn new_session_custom_template() -> Result<()> {
     let dir_mgr = TestDirectoryManager::new()?;
     let config = Arc::new(Config {
-        disable_editor_on_creation: true,
         disable_template: true,
         ..Config::default()
     });
     let layout_data = TestData {
         session_root: env::temp_dir(),
     };
-
     let mut handlebars = Handlebars::new();
-
     handlebars.register_embed_templates_with_extension::<TestFiles>(".lua")?;
     let template_given = handlebars.render("generic_layout", &layout_data)?;
     fs::write(dir_mgr.custom_template_path()?, &template_given)?;
 
+    let opts = CreateSessionOptions {
+        path: layout_data.session_root,
+        name: Some("test".to_owned()),
+        disable_editor: true,
+    };
+
     let mut session_manager = SessionManager::new(config, Arc::clone(dir_mgr.inner()))?;
-    session_manager.create(Some("test".to_owned()), layout_data.session_root.clone())?;
+    session_manager.create(opts.clone())?;
 
     let layout_path = dir_mgr.layouts_dir().join("test").with_extension("lua");
     let template_got = fs::read_to_string(&layout_path)?;
     assert!(template_got.is_empty());
     session_manager.remove("test")?;
 
-    let config = Arc::new(Config {
-        disable_editor_on_creation: true,
-        ..Config::default()
-    });
-    let mut session_manager = SessionManager::new(config, Arc::clone(dir_mgr.inner()))?;
-    session_manager.create(Some("test".to_owned()), layout_data.session_root.clone())?;
+    let mut session_manager = test_session_manager(Arc::clone(dir_mgr.inner()))?;
+    session_manager.create(opts)?;
     let template_got = fs::read_to_string(&layout_path)?;
     assert_eq!(template_got, template_given);
     Ok(())
@@ -251,16 +256,19 @@ fn new_session_custom_template() -> Result<()> {
 #[test]
 fn last_session() -> Result<()> {
     let dir_mgr = TestDirectoryManager::new()?;
-    let config = Arc::new(Config {
-        disable_editor_on_creation: true,
-        ..Config::default()
-    });
+
+    let mut session_manager = test_session_manager(Arc::clone(dir_mgr.inner()))?;
 
     let template = TestFiles::get("generic_layout.lua").unwrap().data;
     fs::write(&dir_mgr.custom_template_path()?, template)?;
 
-    let mut session_manager = SessionManager::new(config, Arc::clone(dir_mgr.inner()))?;
-    session_manager.create(Some("test".to_owned()), env::temp_dir())?;
+    let opts = CreateSessionOptions {
+        disable_editor: true,
+        path: env::temp_dir(),
+        name: Some("test".to_owned()),
+    };
+
+    session_manager.create(opts)?;
     let _ = session_manager
         .switch(SwitchTarget::LastSession)
         .expect_err("switch should error out when there is no last session");

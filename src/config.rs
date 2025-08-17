@@ -15,7 +15,6 @@ pub struct Config {
     pub search_roots: Vec<SearchRoot>,
     pub excludes: Vec<String>,
     pub disable_template: bool,
-    pub disable_editor_on_creation: bool,
 }
 
 impl Default for Config {
@@ -27,7 +26,6 @@ impl Default for Config {
             search_roots: Vec::new(),
             excludes: Vec::new(),
             disable_template: false,
-            disable_editor_on_creation: false,
         }
     }
 }

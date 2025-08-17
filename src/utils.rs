@@ -36,14 +36,16 @@ pub fn shorten_path(path: PathBuf) -> PathBuf {
     }
 }
 
-pub fn expand_path(mut path: PathBuf) -> Result<PathBuf> {
-    if path.starts_with("~") {
+pub fn expand_path(path: &Path) -> Result<PathBuf> {
+    let path = if path.starts_with("~") {
         let home = dirs::home_dir()
             .ok_or_eyre("home directory not found despite home shell expansion used")
             .wrap_err("failed to expand ~ sign")?;
         let stripped_path = path.strip_prefix("~").wrap_err("failed to expand ~ sign")?;
-        path = home.join(stripped_path);
-    }
+        home.join(stripped_path)
+    } else {
+        path.to_owned()
+    };
 
     let path = path
         .canonicalize()

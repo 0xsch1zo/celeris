@@ -12,11 +12,13 @@ use std::fmt::Display;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::string;
+use std::sync::Arc;
 use std::{env, io};
 use std::{error, fs};
 use walkdir::WalkDir;
 
 use crate::config::Config;
+use crate::directory_manager::DirectoryManager;
 use crate::layout::core::{PathState, editor_decision};
 use core::EditorDecision;
 use core::TemplateDecision;
@@ -83,6 +85,10 @@ impl From<string::FromUtf8Error> for Error {
     }
 }
 
+pub struct CreateLayoutOptions {
+    pub disable_editor: bool,
+}
+
 pub struct LayoutName {
     core: core::LayoutName,
 }
@@ -141,8 +147,8 @@ impl Layout {
 
 pub struct LayoutManager {
     core: core::LayoutManager,
-    layouts_dir: PathBuf,
-    cache_dir: PathBuf,
+    config: Arc<Config>,
+    dir_mgr: Arc<DirectoryManager>,
 }
 
 impl LayoutManager {
@@ -171,13 +177,13 @@ impl LayoutManager {
             .try_collect()?)
     }
 
-    pub fn new(layouts_dir: PathBuf, cache_dir: PathBuf) -> Result<Self, Error> {
-        let layouts = Self::enumerate_layouts(&layouts_dir)?;
+    pub fn new(config: Arc<Config>, dir_mgr: Arc<DirectoryManager>) -> Result<Self, Error> {
+        let layouts = Self::enumerate_layouts(dir_mgr.layouts_dir())?;
         let core = core::LayoutManager::new(layouts);
         Ok(Self {
             core,
-            layouts_dir,
-            cache_dir,
+            config,
+            dir_mgr,
         })
     }
 
@@ -192,12 +198,15 @@ impl LayoutManager {
         &mut self,
         layout: Layout,
         root: &Path,
-        config: &Config,
-        config_path: &Path,
+        opts: CreateLayoutOptions,
     ) -> Result<(), Error> {
         let layout_name = layout.tmux_name().to_owned();
-        let template = template(TemplateData::new(&layout_name, &root), config, config_path)?;
-        fs::write(&layout.storage_path(&self.layouts_dir), template).map_err(|e| {
+        let template = template(
+            TemplateData::new(&layout_name, &root),
+            &self.config,
+            self.dir_mgr.config_dir(),
+        )?;
+        fs::write(&layout.storage_path(self.dir_mgr.layouts_dir()), template).map_err(|e| {
             Error::FSOperationFaiure(
                 format!(
                     "failed to create layout with tmux_name: {}",
@@ -207,8 +216,8 @@ impl LayoutManager {
             )
         })?;
         self.core.create(layout.core)?;
-        if let EditorDecision::Spawn = editor_decision(config.disable_editor_on_creation) {
-            self.edit(&layout_name, config)?;
+        if let EditorDecision::Spawn = editor_decision(opts.disable_editor) {
+            self.edit(&layout_name)?;
         }
         Ok(())
     }
@@ -221,7 +230,7 @@ impl LayoutManager {
         let layout = self
             .layout(tmux_name)
             .ok_or(Error::NotFound(tmux_name.to_owned()))?;
-        fs::remove_file(layout.storage_path(&self.layouts_dir)).map_err(|e| {
+        fs::remove_file(layout.storage_path(self.dir_mgr.layouts_dir())).map_err(|e| {
             Error::FSOperationFaiure(
                 format!(
                     "failed to remove layout file with name: {}",
@@ -234,8 +243,9 @@ impl LayoutManager {
         Ok(())
     }
 
-    pub fn edit(&self, tmux_name: &str, config: &Config) -> Result<(), Error> {
-        let editor = config
+    pub fn edit(&self, tmux_name: &str) -> Result<(), Error> {
+        let editor = self
+            .config
             .editor
             .clone()
             .unwrap_or(env::var("EDITOR").map_err(|e| match e {
@@ -246,7 +256,7 @@ impl LayoutManager {
         let layout = self
             .layout(tmux_name)
             .ok_or(Error::NotFound(tmux_name.to_owned()))?;
-        let layout_path = layout.storage_path(&self.layouts_dir);
+        let layout_path = layout.storage_path(self.dir_mgr.layouts_dir());
         Command::new(&editor)
             .arg(layout_path)
             .status()
@@ -258,7 +268,7 @@ impl LayoutManager {
         if !self.core.contains(name) {
             return Ok(());
         }
-        let last_session_path = self.cache_dir.join(Self::LAYOUT_CACHE);
+        let last_session_path = self.dir_mgr.cache_dir().join(Self::LAYOUT_CACHE);
         fs::write(last_session_path, name).map_err(|e| {
             Error::FSOperationFaiure("failed to save the last session".to_owned(), e)
         })?;
@@ -266,7 +276,7 @@ impl LayoutManager {
     }
 
     pub fn get_last(&self) -> Result<Option<String>, Error> {
-        let last_session_path = self.cache_dir.join(Self::LAYOUT_CACHE);
+        let last_session_path = self.dir_mgr.cache_dir().join(Self::LAYOUT_CACHE);
         if !last_session_path.exists() {
             return Ok(None);
         }
@@ -291,10 +301,10 @@ impl<'a> TemplateData<'a> {
     }
 }
 
-fn template(data: TemplateData, config: &Config, config_path: &Path) -> Result<String, Error> {
+fn template(data: TemplateData, config: &Config, config_dir: &Path) -> Result<String, Error> {
     let handlebars = Handlebars::new();
     let default_template = include_str!("../templates/default.lua");
-    let custom_template_path = config_path
+    let custom_template_path = config_dir
         .join("template")
         .with_extension(Layout::extension());
     let custom_template = if custom_template_path.exists() {
