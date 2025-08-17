@@ -7,6 +7,7 @@ use clap::Parser;
 use color_eyre::Result;
 use color_eyre::eyre::Context;
 use std::io::{self, Write};
+use std::path::PathBuf;
 use std::sync::Arc;
 
 fn main() -> Result<()> {
@@ -31,6 +32,13 @@ fn main() -> Result<()> {
         Commands::Edit { name } => session_manager.edit(&name)?,
         Commands::Switch { target } => session_manager.switch(target.into())?,
         Commands::Remove { name } => session_manager.remove(&name)?,
+        Commands::CreateAll => {
+            let paths = io::stdin()
+                .lines()
+                .map(|path| Ok(PathBuf::from(path?)))
+                .collect::<Result<Vec<_>>>()?;
+            session_manager.create_all(paths)?;
+        }
         _ => {
             let output = match cli.command {
                 Commands::Search => repo_search::search(&config)?.join("\n"),

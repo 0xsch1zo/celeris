@@ -36,6 +36,8 @@ pub enum Commands {
         #[command(flatten)]
         opts: CreateOptions,
     },
+    /// Create layouts in bulk from supplied paths from stdin('~' is supported)
+    CreateAll,
     /// Edit an existing layout
     Edit {
         /// Name of the layout to be edited

@@ -78,6 +78,23 @@ impl SessionManager {
         Ok(name) // TODO: maybe return a message
     }
 
+    pub fn create_all(&mut self, paths: Vec<PathBuf>) -> Result<()> {
+        let _ = paths
+            .into_iter()
+            .map(|path| -> Result<(String, PathBuf)> { Ok((utils::file_name(&path)?, path)) })
+            .map(|layout_info| -> Result<CreateSessionOptions> {
+                let (name, path) = layout_info?;
+                Ok(CreateSessionOptions {
+                    name: Some(name),
+                    path,
+                    disable_editor: true,
+                })
+            })
+            .map(|opts| Ok(self.create(opts?)?))
+            .collect::<Result<Vec<_>>>()?;
+        Ok(())
+    }
+
     pub fn edit(&self, tmux_name: &str) -> Result<()> {
         self.layout_mgr.edit(tmux_name)?;
         Ok(())

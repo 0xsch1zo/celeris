@@ -147,7 +147,7 @@ fn remove_session() -> Result<()> {
 }
 
 #[test]
-fn new_session() -> Result<()> {
+fn create_session() -> Result<()> {
     let dir_mgr = TestDirectoryManager::new()?;
     let session_manager = Mutex::new(common::test_session_manager(Arc::clone(dir_mgr.inner()))?);
     let layout_path = dir_mgr.layouts_dir().join("test");
@@ -184,7 +184,7 @@ fn new_session() -> Result<()> {
 }
 
 #[test]
-fn new_session_default_template() -> Result<()> {
+fn create_session_default_template() -> Result<()> {
     let dir_mgr = TestDirectoryManager::new()?;
     let config = Arc::new(Config {
         disable_template: true,
@@ -217,7 +217,7 @@ fn new_session_default_template() -> Result<()> {
 }
 
 #[test]
-fn new_session_custom_template() -> Result<()> {
+fn create_session_custom_template() -> Result<()> {
     let dir_mgr = TestDirectoryManager::new()?;
     let config = Arc::new(Config {
         disable_template: true,
@@ -249,6 +249,38 @@ fn new_session_custom_template() -> Result<()> {
     session_manager.create(opts)?;
     let template_got = fs::read_to_string(&layout_path)?;
     assert_eq!(template_got, template_given);
+    Ok(())
+}
+
+#[test]
+fn create_all() -> Result<()> {
+    let dir_mgr = TestDirectoryManager::new()?;
+    let mut session_manager = test_session_manager(Arc::clone(dir_mgr.inner()))?;
+    let paths = vec![
+        dir_mgr.layouts_dir().join("test1"),
+        dir_mgr.layouts_dir().join("test2"),
+        dir_mgr.layouts_dir().join("test3"),
+    ];
+
+    paths
+        .iter()
+        .try_for_each(|path| -> Result<()> { Ok(fs::create_dir(path)?) })?;
+    session_manager.create_all(paths.clone())?;
+    paths
+        .into_iter()
+        .map(|path| path.with_extension("lua"))
+        .for_each(|path| assert!(path.exists()));
+    let paths = vec![
+        dir_mgr.layouts_dir().join("test4"),
+        dir_mgr.layouts_dir().join("dummy").join("test4"),
+    ];
+
+    paths
+        .iter()
+        .try_for_each(|path| -> Result<()> { Ok(fs::create_dir_all(path)?) })?;
+    let _ = session_manager
+        .create_all(paths.clone())
+        .expect_err("create-all should fail with duplicate file names");
     Ok(())
 }
 
