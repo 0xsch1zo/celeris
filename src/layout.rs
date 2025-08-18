@@ -113,7 +113,7 @@ impl LayoutName {
     }
 }
 
-#[derive(Debug, RefCast)]
+#[derive(Clone, Debug, RefCast)]
 #[repr(transparent)]
 pub struct Layout {
     core: core::Layout,
@@ -243,10 +243,8 @@ impl LayoutManager {
         self.core.layout(tmux_name).map(Layout::ref_cast)
     }
 
-    pub fn remove(&mut self, tmux_name: &str) -> Result<(), Error> {
-        let layout = self
-            .layout(tmux_name)
-            .ok_or(Error::NotFound(tmux_name.to_owned()))?;
+    fn remove(&mut self, layout: &Layout) -> Result<(), Error> {
+        self.core.remove(&layout.core)?;
         fs::remove_file(layout.storage_path(self.dir_mgr.layouts_dir())).map_err(|e| {
             Error::FSOperationFaiure(
                 format!(
@@ -256,7 +254,15 @@ impl LayoutManager {
                 e,
             )
         })?;
-        self.core.remove(tmux_name)?;
+        Ok(())
+    }
+
+    pub fn remove_all(&mut self, layouts: Vec<&Layout>) -> Result<(), Error> {
+        let layouts_core = layouts.iter().map(|l| &l.core).collect_vec();
+        core::LayoutManager::check_duplicates(&layouts_core)?;
+        layouts
+            .into_iter()
+            .try_for_each(|l| -> Result<(), Error> { Ok(self.remove(l)?) })?;
         Ok(())
     }
 

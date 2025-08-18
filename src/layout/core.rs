@@ -140,7 +140,7 @@ impl LayoutName {
     }
 }
 
-#[derive(Debug, Eq, Hash)]
+#[derive(Clone, Debug, Eq, Hash)]
 pub struct Layout {
     tmux_name: String,
     storage_name: String,
@@ -258,13 +258,18 @@ impl LayoutManager {
             .is_some()
     }
 
-    pub fn validate_layouts(&self, layouts: Vec<&Layout>) -> Result<(), Error> {
+    pub fn check_duplicates(layouts: &[&Layout]) -> Result<(), Error> {
         let duplicate_within_set = layouts.iter().duplicates().nth(0);
         if let Some(duplicate) = duplicate_within_set {
             return Err(Error::DuplicateLayoutSupplied(
                 duplicate.tmux_name().to_owned(),
             ));
         }
+        Ok(())
+    }
+
+    pub fn validate_layouts(&self, layouts: Vec<&Layout>) -> Result<(), Error> {
+        Self::check_duplicates(&layouts)?;
 
         let duplicate = layouts
             .into_iter()
@@ -292,12 +297,12 @@ impl LayoutManager {
     }
 
     // impure
-    pub fn remove(&mut self, tmux_name: &str) -> Result<(), Error> {
-        let exists = self.layouts.iter().any(|e| e.tmux_name == tmux_name);
+    pub fn remove(&mut self, layout: &Layout) -> Result<(), Error> {
+        let exists = self.layouts.iter().any(|e| e.tmux_name == layout.tmux_name);
         if !exists {
-            return Err(Error::NotFound(tmux_name.to_owned()));
+            return Err(Error::NotFound(layout.tmux_name().to_owned()));
         }
-        self.layouts.retain(|l| l.tmux_name != tmux_name);
+        self.layouts.retain(|l| l.tmux_name != layout.tmux_name);
         Ok(())
     }
 }
@@ -379,7 +384,8 @@ mod tests {
     #[test]
     fn remove() -> Result<()> {
         let mut layout_manager = layout_manager_with_names(vec!["test"])?;
-        layout_manager.remove("test")?;
+        let layout = layout_manager.layout("test").unwrap().to_owned();
+        layout_manager.remove(&layout)?;
         assert_eq!(layout_manager.contains("test"), false);
         Ok(())
     }

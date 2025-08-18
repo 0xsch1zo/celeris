@@ -51,8 +51,8 @@ pub enum Commands {
     },
     /// Remove a layout
     Remove {
-        /// Name of the layout to be removed
-        name: String,
+        /// Name/s of the layout/s to be removed
+        names: Vec<String>,
     },
 }
 

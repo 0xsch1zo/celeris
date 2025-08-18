@@ -11,6 +11,7 @@ use color_eyre::Result;
 use color_eyre::eyre::OptionExt;
 use color_eyre::eyre::WrapErr;
 use color_eyre::owo_colors::OwoColorize;
+use itertools::Itertools;
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -168,13 +169,18 @@ impl SessionManager {
         Ok(())
     }
 
-    pub fn remove(&mut self, tmux_name: &str) -> Result<()> {
+    pub fn remove(&mut self, names: Vec<String>) -> Result<()> {
+        let layouts = names
+            .into_iter()
+            .map(|name| Ok(self.layout(&name)?.to_owned())) // borrow checker circumevention,
+            // please don't kill me
+            .collect::<Result<Vec<_>>>()?;
+
         self.layout_mgr
-            .remove(tmux_name)
-            .wrap_err_with(|| format!("failed to remove layout with name: {tmux_name}"))?;
+            .remove_all(layouts.iter().collect_vec())
+            .wrap_err_with(|| format!("failed to remove layout/s"))?;
         Ok(())
     }
-
     pub fn list(&self, options: ListSessionsOptions) -> Result<String> {
         Ok(list_sessions::run(&self.layout_mgr, options)?)
     }

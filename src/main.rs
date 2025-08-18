@@ -31,7 +31,7 @@ fn main() -> Result<()> {
     match cli.command {
         Commands::Edit { name } => session_manager.edit(&name)?,
         Commands::Switch { target } => session_manager.switch(target.into())?,
-        Commands::Remove { name } => session_manager.remove(&name)?,
+        Commands::Remove { names } => session_manager.remove(names)?,
         Commands::Create { opts } => session_manager.create(opts.into())?,
         Commands::CreateAll => {
             let paths = io::stdin()

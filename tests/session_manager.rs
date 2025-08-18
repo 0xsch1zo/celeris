@@ -156,13 +156,22 @@ fn list_sessions_active() -> Result<()> {
 #[test]
 fn remove_session() -> Result<()> {
     let dir_mgr = TestDirectoryManager::new()?;
-    common::create_dummy_layouts(&["test"], dir_mgr.as_ref())?;
+    let layouts = ["test1", "test2", "test3"].map(ToOwned::to_owned);
+    common::create_dummy_layouts(
+        &layouts.iter().map(|s| s.as_str()).collect_vec(),
+        dir_mgr.as_ref(),
+    )?;
     let mut session_manager = common::test_session_manager(Arc::clone(dir_mgr.inner()))?;
-    let layout_path = dir_mgr
-        .as_ref()
-        .layouts_dir()
-        .join("test")
-        .with_extension("lua");
+    let layout_paths = layouts
+        .iter()
+        .map(|name| {
+            dir_mgr
+                .as_ref()
+                .layouts_dir()
+                .join(name)
+                .with_extension("lua")
+        })
+        .collect_vec();
 
     println!(
         "{}",
@@ -173,10 +182,19 @@ fn remove_session() -> Result<()> {
             only_running: false,
         })?
     );
-    assert!(layout_path.exists());
-    session_manager.remove("test")?;
-    assert!(!layout_path.exists());
+    assert!(layout_paths[0].exists());
+    session_manager.remove(vec![layouts[0].clone()])?;
+    assert!(!layout_paths[0].exists());
 
+    let _ = session_manager
+        .remove(vec!["test".to_owned(), "test".to_owned()])
+        .expect_err("should fail with duplicate layouts to remove");
+
+    let layouts = layouts.into_iter().skip(1).collect_vec();
+    let layout_paths = layout_paths.into_iter().skip(1).collect_vec();
+
+    session_manager.remove(layouts)?;
+    layout_paths.iter().for_each(|path| assert!(path.exists()));
     Ok(())
 }
 
@@ -241,7 +259,7 @@ fn create_session_default_template() -> Result<()> {
     let layout_path = dir_mgr.layouts_dir().join("test").with_extension("lua");
     let template = fs::read_to_string(&layout_path)?;
     assert!(template.is_empty());
-    session_manager.remove("test")?;
+    session_manager.remove(vec!["test".to_owned()])?;
 
     let mut handlebars = Handlebars::new();
     handlebars.register_embed_templates_with_extension::<DefaultTemplate>(".lua")?;
@@ -280,7 +298,7 @@ fn create_session_custom_template() -> Result<()> {
     let layout_path = dir_mgr.layouts_dir().join("test").with_extension("lua");
     let template_got = fs::read_to_string(&layout_path)?;
     assert!(template_got.is_empty());
-    session_manager.remove("test")?;
+    session_manager.remove(vec!["test".to_owned()])?;
 
     let mut session_manager = test_session_manager(Arc::clone(dir_mgr.inner()))?;
     session_manager.create(opts)?;

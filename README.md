@@ -9,12 +9,12 @@ A powerful, git-aware session manager written in Rust with a dynamic control lay
 
 ## Features
 - Quickly switch between sessions
-- Assemble your own workflows thanks to the modular design of the cli
+- Create pre-configured layouts with lua which grants a lot more freedom than a declarative config
 - Create layouts from git repos detected on the system
-- Configure layouts with lua which grants a lot more freedom than a declarative config
 - Use custom templates to apply a default configuration for all layouts
 - Integrate celeris into the tmux status bar
 - Quickly switch to the last loaded layout(is helpful for example to launch the last loaded layout whenever tmux opens)
+- Assemble your own workflows thanks to the modular design of the cli
 
 ## Requirements
 - luajit(if you have neovim you have it already)
@@ -38,7 +38,7 @@ You can search for git repositories on your system by doing:
 ```sh
 celeris search
 ```
-![NOTE]
+> ![NOTE]
 > For this to work you have to specify roots from which the search should be started in the main config file.
 > Please look at the next section for exact info on how to do that.
 
@@ -51,7 +51,7 @@ Secondly you can combine it with `fzf` to get a nice picker of the repos you wan
 ```sh
 celeris create "$(celeris search | fzf --tmux)"
 ```
-Created layouts are located in `<config-dir/celeris/layouts/>`(which is most commonly `~/.config/celeris/layouts/`)
+Created layouts are located in `<config-dir>/celeris/layouts/`(which is most commonly `~/.config/celeris/layouts/`)
 
 ### Configuring celeris
 There will be a generated config usually at `~/.config/celeris/config.toml`.
@@ -62,7 +62,7 @@ search_subdirs = false # Search in subdirectories of repositories. Default is `f
 # Search roots from which the search will begin
 search_roots = [
     { path = "/home/sentience/sources/projects/", depth = 3 }, # optionally a depth on a per-root basis can be supplied
-    { path = "/home/sentience/dotfiles", excludes = ["dotfiles"] } # optionally an exclude list on a per-root basis can be supplied
+    { path = "/home/sentience/dotfiles", excludes = ["wallpapers"] } # optionally an exclude list on a per-root basis can be supplied
 ] 
 
 excludes = ["_deps"] # Excludes supplied directory names from the search
@@ -126,7 +126,7 @@ Now when we've created our layouts we can switch between the sessions quickly by
 ```tmux
 bind 'j' run-shell "celeris switch `celeris list | fzf --tmux` || true"
 ```
-![NOTE]
+> ![NOTE]
 > Note the `|| true` at the end. It's there as a workaround because normally when a process exits with a non-zero exit code tmux shows it's output on the screen, which can be useful for debugging, but it's also incredibly annoying
 Now you can use whichever picker you want here. The possibilities are endless.
 
@@ -144,9 +144,9 @@ celeris edit <name>
 ```
 Edits the layout with this name:
 ```sh
-celeris remove <name>
+celeris remove <name/s>
 ```
-Removes layout with this name:
+Removes one layout or more with listed names:
 
 ### Custom template
 This template will be automatically written in by default to every layout created.
