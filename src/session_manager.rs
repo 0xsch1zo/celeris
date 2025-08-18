@@ -182,6 +182,7 @@ mod list_sessions {
         pub tmux_format: bool,
         pub include_active: bool,
         pub exclude_running: bool,
+        pub only_running: bool,
     }
 
     struct ExcludeInfo {
@@ -225,6 +226,10 @@ mod list_sessions {
     }
 
     fn exclude(session_name: &str, info: &ExcludeInfo, opts: &Options) -> bool {
+        if opts.only_running {
+            return info.running_sessions.contains(&session_name.to_owned());
+        }
+
         if !opts.include_active
             && info.active_session.is_some()
             && session_name == info.active_session.as_ref().unwrap()

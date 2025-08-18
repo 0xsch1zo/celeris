@@ -4,6 +4,7 @@ mod common;
 use celeris::config::Config;
 use celeris::session_manager::{CreateSessionOptions, SwitchTarget};
 use celeris::session_manager::{ListSessionsOptions, SessionManager};
+use celeris::tmux::Session;
 use color_eyre::eyre::eyre;
 use color_eyre::{Result, eyre::Context};
 use common::TestDirectoryManager;
@@ -51,6 +52,7 @@ fn list_sessions() -> Result<()> {
         tmux_format: false,
         include_active: false,
         exclude_running: true,
+        only_running: false,
     };
     let output = session_manager.list(opts)?;
     output
@@ -58,6 +60,35 @@ fn list_sessions() -> Result<()> {
         .map(str::trim)
         .zip(dummy_layouts)
         .for_each(|(output, session)| assert_eq!(output, session));
+    Ok(())
+}
+
+#[test]
+fn only_running() -> Result<()> {
+    unsafe {
+        env::set_var("CELERIS_TMUX_SOCKET_NAME", "__celeris_testing");
+    }
+    let dir_mgr = TestDirectoryManager::new()?;
+    let session_manager = test_session_manager(Arc::clone(dir_mgr.inner()))?;
+    let session_names = ["__celeris_testing_1", "__celeris_testing_2"];
+    let _sessions = session_names
+        .iter()
+        .map(|name| Session::builder((*name).to_owned()))
+        .map(|mut builder| builder.build())
+        .collect::<Result<Vec<_>>>()?;
+
+    let opts = ListSessionsOptions {
+        tmux_format: false,
+        include_active: false,
+        exclude_running: false,
+        only_running: true,
+    };
+    session_manager
+        .list(opts)?
+        .lines()
+        .sorted()
+        .zip(session_names.into_iter().sorted())
+        .for_each(|(given, got)| assert!(given.contains(got)));
     Ok(())
 }
 
@@ -103,6 +134,7 @@ fn list_sessions_active() -> Result<()> {
         tmux_format: false,
         include_active: true,
         exclude_running: false,
+        only_running: false,
     };
 
     let output = session_manager.list(opts)?;
@@ -136,7 +168,8 @@ fn remove_session() -> Result<()> {
         session_manager.list(ListSessionsOptions {
             tmux_format: false,
             include_active: false,
-            exclude_running: true
+            exclude_running: true,
+            only_running: false,
         })?
     );
     assert!(layout_path.exists());
