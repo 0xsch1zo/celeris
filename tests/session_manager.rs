@@ -278,9 +278,19 @@ fn create_all() -> Result<()> {
     paths
         .iter()
         .try_for_each(|path| -> Result<()> { Ok(fs::create_dir_all(path)?) })?;
+
+    paths
+        .iter()
+        .map(|path| path.with_extension("lua"))
+        .for_each(|path| assert!(!path.exists()));
+
     let _ = session_manager
         .create_all(paths.clone())
         .expect_err("create-all should fail with duplicate file names");
+    paths
+        .into_iter()
+        .map(|path| path.with_extension("lua"))
+        .for_each(|path| assert!(!path.exists()));
     Ok(())
 }
 

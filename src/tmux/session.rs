@@ -413,7 +413,6 @@ mod tests {
     #[test_with::env(TMUX)]
     #[test]
     fn active_name() -> Result<()> {
-        println!("{:?}", check_nextest_bare());
         let session = testing_session()?;
         session.attach()?;
         let Some(active_name) = Session::active_name()? else {

@@ -15,6 +15,7 @@ pub enum Error {
     InvalidFilename(Box<dyn std::error::Error + Sync + Send>),
     InvalidLayoutName(String),
     NotADirectory(PathBuf),
+    DuplicateLayoutSupplied(String),
 }
 
 pub enum PathState {
@@ -47,6 +48,9 @@ impl Display for Error {
             Self::NotADirectory(path) => {
                 format!("the following path needs to be a directory: {path:?}")
             }
+            Self::DuplicateLayoutSupplied(layout_name) => {
+                format!("duplicate layouts names: {layout_name}")
+            }
         };
         write!(f, "{message}")
     }
@@ -68,14 +72,23 @@ impl LayoutName {
     const STORAGE_NAME_DELIMETER: &str = ".";
     const TMUX_NAME_DELIMETER: &str = "/";
 
-    pub fn try_new(name: String) -> Result<Self, Error> {
+    pub fn try_new(name: String, layout_manager: &LayoutManager) -> Result<Self, Error> {
+        if layout_manager.contains(&name) {
+            return Err(Error::AlreadyExists(format!("layout named: {name}")));
+        }
+
+        Self::validate_name(&name)?;
+        Ok(Self(name))
+    }
+
+    fn validate_name(name: &str) -> Result<(), Error> {
         let tmux_special_chars = ['@', '$', '%', ':', '.'];
         if name.chars().any(|c| tmux_special_chars.contains(&c)) {
             return Err(Error::InvalidLayoutName(format!(
                 "name contains characters that tmux treats specially({tmux_special_chars:?}). You can also set a custom name when creating a session"
             )));
         }
-        Ok(Self(name))
+        Ok(())
     }
 
     pub fn try_from_path(
@@ -106,15 +119,13 @@ impl LayoutName {
             }
         });
 
-        if layout_manager.contains(&name) {
-            return Err(Error::AlreadyExists(name));
-        }
-        Self::try_new(name)
+        Self::try_new(name, layout_manager)
     }
 
     pub fn try_from_storage_name(storage_name: String) -> Result<Self, Error> {
         let name = storage_name.replace(Self::STORAGE_NAME_DELIMETER, Self::TMUX_NAME_DELIMETER);
-        Self::try_new(name)
+        Self::validate_name(&name)?;
+        Ok(Self(name))
     }
 
     fn tmux_name(&self) -> &str {
@@ -129,7 +140,7 @@ impl LayoutName {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Eq, Hash)]
 pub struct Layout {
     tmux_name: String,
     storage_name: String,
@@ -137,10 +148,9 @@ pub struct Layout {
 
 impl PartialEq for Layout {
     fn eq(&self, other: &Self) -> bool {
-        self.tmux_name == other.tmux_name || self.storage_name == other.storage_name
+        self.tmux_name == other.tmux_name || self.storage_name == other.tmux_name
     }
 }
-
 impl Layout {
     pub fn new(layout_name: LayoutName) -> Self {
         Self {
@@ -248,6 +258,26 @@ impl LayoutManager {
             .is_some()
     }
 
+    pub fn validate_layouts(&self, layouts: Vec<&Layout>) -> Result<(), Error> {
+        let duplicate_within_set = layouts.iter().duplicates().nth(0);
+        if let Some(duplicate) = duplicate_within_set {
+            return Err(Error::DuplicateLayoutSupplied(
+                duplicate.tmux_name().to_owned(),
+            ));
+        }
+
+        let duplicate = layouts
+            .into_iter()
+            .find(|layout| self.contains(&layout.tmux_name()));
+        match duplicate {
+            Some(duplicate) => Err(Error::AlreadyExists(format!(
+                "layout with name: {}",
+                duplicate.tmux_name()
+            ))),
+            None => Ok(()),
+        }
+    }
+
     pub fn list(&self) -> Vec<&String> {
         self.layouts.iter().map(|e| &e.tmux_name).collect_vec()
     }
@@ -293,7 +323,7 @@ mod tests {
     use color_eyre::Result;
 
     fn test_layout(name: &str) -> Result<Layout> {
-        Ok(Layout::new(LayoutName::try_new(name.to_owned())?))
+        Ok(Layout::new(LayoutName(name.to_owned())))
     }
 
     fn layout_manager_with_names(names: Vec<&'static str>) -> Result<LayoutManager> {

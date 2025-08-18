@@ -85,6 +85,7 @@ impl From<string::FromUtf8Error> for Error {
     }
 }
 
+#[derive(Clone)]
 pub struct CreateLayoutOptions {
     pub disable_editor: bool,
 }
@@ -94,8 +95,8 @@ pub struct LayoutName {
 }
 
 impl LayoutName {
-    pub fn try_new(tmux_name: String) -> Result<Self, Error> {
-        let core = core::LayoutName::try_new(tmux_name)?;
+    pub fn try_new(tmux_name: String, layout_manager: &LayoutManager) -> Result<Self, Error> {
+        let core = core::LayoutName::try_new(tmux_name, &layout_manager.core)?;
         Ok(Self { core })
     }
 
@@ -191,6 +192,7 @@ impl LayoutManager {
     delegate! {
         to self.core {
             pub fn list(&self) -> Vec<&String>;
+            fn contains(&self, tmux_name: &str) -> bool;
         }
     }
 
@@ -206,19 +208,34 @@ impl LayoutManager {
             &self.config,
             self.dir_mgr.config_dir(),
         )?;
-        fs::write(&layout.storage_path(self.dir_mgr.layouts_dir()), template).map_err(|e| {
+        let layout_path = layout.storage_path(self.dir_mgr.layouts_dir());
+        self.core.create(layout.core)?;
+
+        fs::write(layout_path, template).map_err(|e| {
             Error::FSOperationFaiure(
-                format!(
-                    "failed to create layout with tmux_name: {}",
-                    layout.tmux_name()
-                ),
+                format!("failed to create layout with tmux_name: {}", layout_name),
                 e,
             )
         })?;
-        self.core.create(layout.core)?;
         if let EditorDecision::Spawn = editor_decision(opts.disable_editor) {
             self.edit(&layout_name)?;
         }
+        Ok(())
+    }
+
+    pub fn create_all(&mut self, rooted_layouts: Vec<(Layout, PathBuf)>) -> Result<(), Error> {
+        let layouts = rooted_layouts
+            .iter()
+            .map(|(layout, _)| &layout.core)
+            .collect_vec();
+        self.core.validate_layouts(layouts)?;
+        let opts = CreateLayoutOptions {
+            disable_editor: true,
+        };
+        rooted_layouts
+            .into_iter()
+            .map(|(layout, root)| self.create(layout, &root, opts.clone()))
+            .collect::<Result<(), Error>>()?;
         Ok(())
     }
 
@@ -265,7 +282,7 @@ impl LayoutManager {
     }
 
     pub fn save_if_layout(&self, name: &str) -> Result<(), Error> {
-        if !self.core.contains(name) {
+        if !self.contains(name) {
             return Ok(());
         }
         let last_session_path = self.dir_mgr.cache_dir().join(Self::LAYOUT_CACHE);

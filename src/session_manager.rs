@@ -11,17 +11,18 @@ use color_eyre::Result;
 use color_eyre::eyre::OptionExt;
 use color_eyre::eyre::WrapErr;
 use color_eyre::owo_colors::OwoColorize;
+use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
 
 fn layout_from_options(
     name: Option<String>,
-    path: PathBuf,
+    path: &Path,
     layout_mgr: &LayoutManager,
 ) -> Result<Layout> {
     let name = match name {
-        Some(name) => LayoutName::try_new(name)?,
-        None => LayoutName::try_from_path(&path, layout_mgr)?,
+        Some(name) => LayoutName::try_new(name, layout_mgr)?,
+        None => LayoutName::try_from_path(path, layout_mgr)?,
     };
     Ok(Layout::new(name))
 }
@@ -70,7 +71,7 @@ impl SessionManager {
 
     pub fn create(&mut self, opts: CreateSessionOptions) -> Result<String> {
         let path = utils::expand_path(&opts.path)?;
-        let layout = layout_from_options(opts.name.clone(), path.clone(), &self.layout_mgr)?;
+        let layout = layout_from_options(opts.name.clone(), &path, &self.layout_mgr)?;
         let name = layout.tmux_name().to_owned();
         self.layout_mgr
             .create(layout, &path, opts.into())
@@ -79,19 +80,20 @@ impl SessionManager {
     }
 
     pub fn create_all(&mut self, paths: Vec<PathBuf>) -> Result<()> {
-        let _ = paths
+        let rooted_layouts = paths
             .into_iter()
-            .map(|path| -> Result<(String, PathBuf)> { Ok((utils::file_name(&path)?, path)) })
-            .map(|layout_info| -> Result<CreateSessionOptions> {
-                let (name, path) = layout_info?;
-                Ok(CreateSessionOptions {
-                    name: Some(name),
-                    path,
-                    disable_editor: true,
-                })
+            .map(|p| utils::expand_path(&p))
+            .map(|path| -> Result<(String, PathBuf)> {
+                let path = path?;
+                Ok((utils::file_name(&path)?, path))
             })
-            .map(|opts| Ok(self.create(opts?)?))
+            .map(|layout_info| {
+                let (name, path) = layout_info?;
+                let layout = layout_from_options(Some(name), &path, &self.layout_mgr)?;
+                Ok((layout, path))
+            })
             .collect::<Result<Vec<_>>>()?;
+        self.layout_mgr.create_all(rooted_layouts)?;
         Ok(())
     }
 

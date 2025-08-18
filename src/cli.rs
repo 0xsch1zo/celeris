@@ -36,7 +36,8 @@ pub enum Commands {
         #[command(flatten)]
         opts: CreateOptions,
     },
-    /// Create layouts in bulk from supplied paths from stdin('~' is supported)
+    /// Create layouts in bulk from supplied paths from stdin('~' is supported). Duplicate file
+    /// names will not be deduplicated as usual
     CreateAll,
     /// Edit an existing layout
     Edit {
