@@ -1,4 +1,5 @@
 use crate::tmux::{self, BuilderTransform};
+use color_eyre::eyre::{self, Context};
 use mlua::{ExternalResult, FromLua, Lua, LuaSerdeExt, Result, Table, UserData};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -28,7 +29,7 @@ impl FromLua for Direction {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/*#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "type")]
 enum SplitSize {
@@ -50,11 +51,12 @@ impl From<SplitSize> for tmux::SplitSize {
         }
     }
 }
+*/
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct SplitOptions {
     root: Option<PathBuf>,
-    size: Option<SplitSize>,
+    size: Option<String>,
 }
 
 impl SplitOptions {
@@ -63,11 +65,34 @@ impl SplitOptions {
         sibling_pane: Arc<tmux::Pane>,
         direction: Direction,
     ) -> Result<tmux::SplitBuilder> {
+        let size = self
+            .size
+            .map(|s| -> eyre::Result<tmux::SplitSize> {
+                let size = s.trim();
+                if size.ends_with("%") {
+                    Ok(tmux::SplitSize::Percentage(
+                        size.strip_suffix("%")
+                            .expect(
+                                "split size which ends with % should be strippable from the % sign",
+                            )
+                            .parse::<u8>()
+                            .wrap_err_with(|| format!("failed to parse percentage size: {size}"))?,
+                    ))
+                } else {
+                    Ok(tmux::SplitSize::Absolute(
+                        size.parse::<u32>()
+                            .wrap_err_with(|| format!("failed to parse percentage size: {size}"))?,
+                    ))
+                }
+            })
+            .transpose()
+            .into_lua_err()?;
+
         Ok(sibling_pane
             .split(direction.into())
             .try_builder_transform(self.root, tmux::SplitBuilder::root)
             .into_lua_err()?
-            .builder_transform(self.size.map(|s| s.into()), tmux::SplitBuilder::size))
+            .builder_transform(size, tmux::SplitBuilder::size))
     }
 }
 
@@ -163,11 +188,11 @@ mod tests {
         };
 
         let opts_given = [
-            "{ root = \"{{root}}\", size = { type = \"absolute\", value = {{absolute_size}} } }",
-            "{ root = \"{{root}}\", size = { type = \"percentage\", value = {{percentage_size}} } }",
-            "{ size = { type = \"absolute\", value = {{absolute_size}} } }",
-            "{ size = { type = \"percentage\", value = {{percentage_size}} } }",
-            "{ root = \"{{root}}\" }",
+            r#"{ root = "{{root}}", size = "{{absolute_size}}" }"#,
+            r#"{ root = "{{root}}", size = "{{percentage_size}}%" }"#,
+            r#"{ size = "{{absolute_size}}" }"#,
+            r#"{ size = "{{percentage_size}}%" }"#,
+            r#"{ root = "{{root}}" }"#,
         ]
         .into_iter()
         .map(|opt| handlebars.render_template(opt, &opt_data).into_lua_err())
@@ -203,6 +228,23 @@ mod tests {
         ];
 
         assert_eq!(buliders_expected, builders_got);
+
+        let opts_given = [
+            r#"{ size = "&{{absolute_size}}" }"#,
+            r#"{ size = " {{percentage_size}} %" }"#,
+            r#"{ size = "-{{percentage_size}}-% " }"#,
+        ]
+        .into_iter()
+        .map(|opt| handlebars.render_template(opt, &opt_data).into_lua_err())
+        .map(|opt| lua.from_value::<SplitOptions>(lua.load(opt?).eval()?))
+        .collect::<Result<Vec<_>>>()?;
+
+        opts_given
+            .into_iter()
+            .map(|opt| opt.try_into_builder(Arc::clone(&default_pane), opt_data.direction.clone()))
+            .for_each(|result| {
+                let _ = result.expect_err("should fail under eroneous value");
+            });
         Ok(())
     }
 }

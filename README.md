@@ -96,8 +96,7 @@ window:default_pane():run_command("nvim")
 
 -- Splits a pane into two panes either vertically or horizontally. The direction argument can be either "horizonal" or "vertical"
 local _another_pane = window:default_pane():split("horizontal", {
-    -- TODO: why not just use a % sign dumbass
-    size = { type = "percentage", value = 10 } -- type can be either "absolute" or "percentage". Size of the pane either absolute or in percentages.
+    size = "20%" -- the size of a pane can be a percentage or can be an absolute value(just omit the %)
     root = "/tmp" -- pane's working directory
 })
 

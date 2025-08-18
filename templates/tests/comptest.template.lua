@@ -19,12 +19,12 @@ window2:select()
 
 local pane = window2:default_pane():split("horizontal", {
     root = "{{session_root}}",
-    size = { type = "absolute", value = 4 },
+    size = "3",
 })
 
 window2:default_pane():split("vertical", {
     root = "{{session_root}}",
-    size = { type = "percentage", value = 20 },
+    size = "20%",
 })
 
 pane:select()

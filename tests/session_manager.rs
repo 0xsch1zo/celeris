@@ -192,9 +192,8 @@ fn remove_session() -> Result<()> {
 
     let layouts = layouts.into_iter().skip(1).collect_vec();
     let layout_paths = layout_paths.into_iter().skip(1).collect_vec();
-
     session_manager.remove(layouts)?;
-    layout_paths.iter().for_each(|path| assert!(path.exists()));
+    layout_paths.iter().for_each(|path| assert!(!path.exists()));
     Ok(())
 }
 
