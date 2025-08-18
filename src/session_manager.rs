@@ -37,6 +37,7 @@ pub struct CreateSessionOptions {
     pub path: PathBuf,
     pub name: Option<String>,
     pub disable_editor: bool,
+    pub machine_readable: bool,
 }
 
 impl From<CreateSessionOptions> for CreateLayoutOptions {
@@ -69,14 +70,21 @@ impl SessionManager {
             .ok_or_eyre(format!("session not found: {}", name))?)
     }
 
-    pub fn create(&mut self, opts: CreateSessionOptions) -> Result<String> {
+    pub fn create(&mut self, opts: CreateSessionOptions) -> Result<()> {
         let path = utils::expand_path(&opts.path)?;
         let layout = layout_from_options(opts.name.clone(), &path, &self.layout_mgr)?;
         let name = layout.tmux_name().to_owned();
         self.layout_mgr
-            .create(layout, &path, opts.into())
+            .create(layout, &path, opts.clone().into())
             .wrap_err("failed to create layout file")?;
-        Ok(name) // TODO: maybe return a message
+        match opts.machine_readable {
+            true => println!("{name}"),
+            false => eprintln!(
+                "{}: Created session with name: {name}",
+                "info".green().bold()
+            ),
+        };
+        Ok(())
     }
 
     pub fn create_all(&mut self, paths: Vec<PathBuf>) -> Result<()> {

@@ -114,6 +114,7 @@ fn list_sessions_active() -> Result<()> {
             name: Some(layout.to_owned()),
             path: env::temp_dir(),
             disable_editor: true,
+            machine_readable: false,
         })?;
         Ok(())
     })?;
@@ -193,6 +194,7 @@ fn create_session() -> Result<()> {
             disable_editor: false,
             name: None,
             path: layout_path,
+            machine_readable: false,
         };
         let result = session_manager.lock().unwrap().create(opts);
         err_tx.send(result).unwrap();
@@ -231,6 +233,7 @@ fn create_session_default_template() -> Result<()> {
         disable_editor: true,
         path: layout_data.session_root.clone(),
         name: Some("test".to_owned()),
+        machine_readable: false,
     };
     let mut session_manager = SessionManager::new(config, Arc::clone(dir_mgr.inner()))?;
     session_manager.create(opts.clone())?;
@@ -268,6 +271,7 @@ fn create_session_custom_template() -> Result<()> {
         path: layout_data.session_root,
         name: Some("test".to_owned()),
         disable_editor: true,
+        machine_readable: false,
     };
 
     let mut session_manager = SessionManager::new(config, Arc::clone(dir_mgr.inner()))?;
@@ -341,6 +345,7 @@ fn last_session() -> Result<()> {
         disable_editor: true,
         path: env::temp_dir(),
         name: Some("test".to_owned()),
+        machine_readable: false,
     };
 
     session_manager.create(opts)?;

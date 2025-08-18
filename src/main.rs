@@ -32,6 +32,7 @@ fn main() -> Result<()> {
         Commands::Edit { name } => session_manager.edit(&name)?,
         Commands::Switch { target } => session_manager.switch(target.into())?,
         Commands::Remove { name } => session_manager.remove(&name)?,
+        Commands::Create { opts } => session_manager.create(opts.into())?,
         Commands::CreateAll => {
             let paths = io::stdin()
                 .lines()
@@ -42,7 +43,6 @@ fn main() -> Result<()> {
         _ => {
             let output = match cli.command {
                 Commands::Search => repo_search::search(&config)?.join("\n"),
-                Commands::Create { opts } => session_manager.create(opts.into())?,
                 Commands::List { opts } => session_manager.list(opts.into())?,
                 _ => unreachable!(),
             };

@@ -66,6 +66,9 @@ pub struct CreateOptions {
     /// Don't open the layout file in the $EDITOR
     #[arg(short, long)]
     disable_editor: bool,
+    /// Print the name of the layout created in a machine readable format
+    #[arg(short, long)]
+    machine_readable: bool,
 }
 
 impl From<CreateOptions> for CreateSessionOptions {
@@ -74,6 +77,7 @@ impl From<CreateOptions> for CreateSessionOptions {
             path: value.path,
             name: value.name,
             disable_editor: value.disable_editor,
+            machine_readable: value.machine_readable,
         }
     }
 }
