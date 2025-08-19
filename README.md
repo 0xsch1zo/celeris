@@ -44,7 +44,7 @@ You can search for git repositories on your system by doing:
 ```sh
 celeris search
 ```
-> ![NOTE]
+> [!NOTE]  
 > For this to work you have to specify roots from which the search should be started in the main config file.
 > Please look at the [config section](#configuring-celeris) for exact info on how to do that.
 
@@ -81,7 +81,7 @@ It serves excellently as a dynamic control layer for all tmux commands.
 The interface is designed to be way nicer to the user than the default tmux experience.
 Great effort was put into making the state explicit, instead of relying on the usual implicitness of tmux.
 As an example let us look at a slightly modified version of the default template:
-> ![NOTE]
+> [!NOTE]
 > All options supplied to constructor functions(those `.new` functions) are optional, they're shown here to demonstrate the full functionality
 
 ```lua
@@ -137,7 +137,7 @@ assert(window_name == "foo")
 ```
 Each tmux component(session, window, pane) has a `target` method that can be used for interoperability with custom tmux commands.
 
-> ![WARNING]
+> [!WARNING]
 > Remember <b>with great power comes great responsibility</b> if you interact with components managed by celeris without knowing exactly what you're doing all sorts of weird things may happen.
 > For example if you delete the pane that celeris manages it will most likely error out on you when it will try to use it.
 
@@ -158,7 +158,7 @@ Now when we've created our layouts we can switch between the sessions quickly by
 ```tmux
 bind 'j' run-shell "celeris switch `celeris list | fzf --tmux` || true"
 ```
-> ![NOTE]
+> [!NOTE]
 > Note the `|| true` at the end. It's there as a workaround because normally when a process exits with a non-zero exit code tmux shows it's output on the screen, which can be useful for debugging, but it's also incredibly annoying
 
 Now you can use whichever picker you want here. The possibilities are endless.
