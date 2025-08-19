@@ -120,6 +120,7 @@ fn target_exists() -> Result<()> {
 
 #[test]
 fn execute() -> Result<()> {
+    let _session = testing_session(); // startup tmux server
     let output = tmux()?.args(["display-message", "-p", "test"]).execute()?;
     assert_eq!(output.trim(), "test");
 
@@ -132,6 +133,7 @@ fn execute() -> Result<()> {
 
 #[test]
 fn tmux_test() -> Result<()> {
+    let _session = testing_session(); // startup tmux server
     let socket_name = "__celeris_tmux_testing";
     unsafe {
         env::set_var("CELERIS_TMUX_SOCKET_NAME", socket_name);
@@ -155,5 +157,9 @@ fn tmux_test() -> Result<()> {
             Command::new("tmux").args(["-S", &socket_path.to_string_lossy()])
         ),
     );
+
+    unsafe {
+        env::remove_var("CELERIS_TMUX_SOCKET_PATH");
+    }
     Ok(())
 }

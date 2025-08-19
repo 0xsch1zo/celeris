@@ -1,24 +1,22 @@
 [test-groups]
-tmux = { max-threads = 1 }
-integration = { max-threads = 1 }
-script = { max-threads = 1}
+tmux-relaiant = { max-threads = 1 }
 
 [[profile.default.overrides]]
 filter = "test(tmux::)"
-test-group = "tmux"
+test-group = "tmux-relaiant"
 
 [[profile.default.overrides]]
 filter = "test(script::)"
-test-group = "script"
+test-group = "tmux-relaiant"
 
 [[profile.default.overrides]]
 filter = "binary(session_manager)"
-test-group = "integration"
+test-group = "tmux-relaiant"
 
 [[profile.default.overrides]]
 filter = "binary(repo_search)"
-test-group = "integration"
+test-group = "tmux-relaiant"
 
 [[profile.default.overrides]]
 filter = "binary(config)"
-test-group = "integration"
+test-group = "tmux-relaiant"
