@@ -1,4 +1,4 @@
-use crate::tmux::{self, PaneTarget, Root, RootOptions, TmuxExecuteExt};
+use crate::tmux::{self, PaneTarget, Root, RootOptions, Target, TmuxExecuteExt};
 use crate::utils;
 use color_eyre::{Result, eyre::eyre};
 use std::path::PathBuf;
@@ -99,7 +99,7 @@ impl SplitBuilder {
     }
 
     fn split_command(&self) -> Result<Command> {
-        let mut command = tmux::targeted_command(&self.sibling_target, "split-window")?;
+        let mut command = self.sibling_target.targeted_command("split-window")?;
         command.args(["-P", "-F", "#{pane_id}"]);
         match self.opts.direction {
             Direction::Vertical => command.arg("-v"),
@@ -144,18 +144,18 @@ impl Pane {
     }
 
     pub fn select(&self) -> Result<()> {
-        tmux::targeted_command(&self.target, "select-pane")?.execute()?;
+        self.target().targeted_command("select-pane")?.execute()?;
         Ok(())
     }
 
     pub fn run_command(&self, command: &str) -> Result<()> {
-        tmux::targeted_command(&self.target, "send-keys")?
+        self.target()
+            .targeted_command("send-keys")?
             .args([command, "Enter"])
             .execute()?;
         Ok(())
     }
 
-    #[allow(private_interfaces)]
     pub fn target(&self) -> &PaneTarget {
         &self.target
     }
@@ -177,10 +177,10 @@ mod tests {
         let pane1 = window.default_pane();
         let pane2 = pane1.split(Direction::Vertical).build()?;
 
-        assert_eq!(tmux::target_exists(&pane1.target)?, true);
-        assert_eq!(tmux::target_exists(&pane2.target)?, true);
+        assert_eq!(pane1.target().target_exists()?, true);
+        assert_eq!(pane2.target().target_exists()?, true);
 
-        let output = tmux::targeted_command(window.target(), "list-panes")?.execute()?;
+        let output = window.target().targeted_command("list-panes")?.execute()?;
         assert_eq!(output.lines().count(), 2);
         Ok(())
     }
@@ -194,7 +194,9 @@ mod tests {
             .split(Direction::Vertical)
             .root(env::temp_dir())?
             .build()?;
-        let output = tmux::targeted_command(&pane.target, "display-message")?
+        let output = pane
+            .target()
+            .targeted_command("display-message")?
             .args(["-p", "#{pane_current_path}"])
             .execute()?;
         assert_eq!(output.trim(), &utils::path_to_string(&env::temp_dir())?);
@@ -211,7 +213,9 @@ mod tests {
             .size(SplitSize::Percentage(0))
             .build()?;
 
-        let output = tmux::targeted_command(window.target(), "display-message")?
+        let output = window
+            .target()
+            .targeted_command("display-message")?
             .args(["-p", "#{window_width}"])
             .execute()?;
         assert!(
@@ -219,7 +223,9 @@ mod tests {
             "insufficent window size for testing"
         );
 
-        let output = tmux::targeted_command(&pane.target, "display-message")?
+        let output = pane
+            .target()
+            .targeted_command("display-message")?
             .args(["-p", "#{pane_width}"])
             .execute()?;
 
@@ -244,7 +250,9 @@ mod tests {
             .size(SplitSize::Absolute(1))
             .build()?;
 
-        let output = tmux::targeted_command(window.target(), "display-message")?
+        let output = window
+            .target()
+            .targeted_command("display-message")?
             .args(["-p", "#{window_width}"])
             .execute()?;
         assert!(
@@ -252,7 +260,9 @@ mod tests {
             "insufficent window size for testing"
         );
 
-        let output = tmux::targeted_command(&pane.target, "display-message")?
+        let output = pane
+            .target()
+            .targeted_command("display-message")?
             .args(["-p", "#{pane_width}"])
             .execute()?;
 
@@ -268,7 +278,9 @@ mod tests {
             .build()?;
         let window = Window::builder(&session).build()?;
         let another_pane = window.default_pane().split(Direction::Vertical).build()?;
-        let output = tmux::targeted_command(another_pane.target(), "display-message")?
+        let output = another_pane
+            .target()
+            .targeted_command("display-message")?
             .args(["-p", "#{pane_current_path}"])
             .execute()?;
         assert_eq!(root.to_string_lossy(), output.trim());
@@ -282,10 +294,12 @@ mod tests {
         let pane1 = window.default_pane();
         let _pane2 = pane1.split(Direction::Vertical).build();
         pane1.select()?;
-        let output = tmux::targeted_command(session.target(), "display-message")?
+        let output = session
+            .target()
+            .targeted_command("display-message")?
             .args(["-p", "#{pane_id}"])
             .execute()?;
-        assert!(pane1.target().get().contains(output.trim()));
+        assert!(pane1.target.get().contains(output.trim()));
         Ok(())
     }
 
@@ -303,7 +317,9 @@ mod tests {
         pane.run_command(&command)?;
         // Yes the shell is sometimes this slow
         thread::sleep(Duration::from_secs(1));
-        let output = tmux::targeted_command(pane.target(), "display-message")?
+        let output = pane
+            .target()
+            .targeted_command("display-message")?
             .args(["-p", "#{pane_current_command}"])
             .execute()?;
         assert_eq!(output.trim(), real_command);

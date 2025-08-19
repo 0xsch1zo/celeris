@@ -1,4 +1,4 @@
-use crate::tmux::{self, BuilderTransform};
+use crate::tmux::{self, BuilderTransform, Target};
 use color_eyre::eyre::{self, Context};
 use mlua::{ExternalResult, FromLua, Lua, LuaSerdeExt, Result, Table, UserData};
 use serde::{Deserialize, Serialize};
@@ -131,6 +131,10 @@ impl Pane {
         this.inner.run_command(&command).into_lua_err()?;
         Ok(())
     }
+
+    fn target(_: &Lua, this: &Self, _: ()) -> Result<String> {
+        Ok(this.inner.target().get().to_owned())
+    }
 }
 
 impl UserData for Pane {
@@ -138,6 +142,7 @@ impl UserData for Pane {
         methods.add_method("split", Pane::split);
         methods.add_method("select", Pane::select);
         methods.add_method("run_command", Pane::run_command);
+        methods.add_method("target", Pane::target);
     }
 }
 

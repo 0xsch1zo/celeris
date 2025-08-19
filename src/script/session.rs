@@ -1,5 +1,5 @@
-use crate::tmux;
 use crate::tmux::BuilderTransform;
+use crate::tmux::{self, Target};
 use color_eyre::eyre::WrapErr;
 use mlua::{
     ExternalResult, FromLua, Lua, LuaSerdeExt, Result, Table, UserData, UserDataMethods, Value,
@@ -57,12 +57,17 @@ impl Session {
         this.inner.attach().into_lua_err()?;
         Ok(())
     }
+
+    fn target(_: &Lua, this: &Self, _: ()) -> Result<String> {
+        Ok(this.inner.target().get().to_owned())
+    }
 }
 
 impl UserData for Session {
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
         methods.add_function("new", Session::try_new);
         methods.add_method_mut("attach", Session::attach);
+        methods.add_method("target", Session::target);
     }
 }
 

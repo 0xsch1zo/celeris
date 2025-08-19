@@ -11,7 +11,6 @@ use color_eyre::{
 };
 use std::{
     env::{self, VarError},
-    fmt::Display,
     str,
 };
 use std::{
@@ -23,8 +22,7 @@ pub use pane::{Direction, Pane, SplitBuilder, SplitSize};
 pub use session::{Session, SessionBuilder};
 pub use window::{Window, WindowBuilder};
 
-// TODO: provide a custom tmux command builder for special cases
-fn tmux() -> Result<Command> {
+pub fn tmux() -> Result<Command> {
     let mut command = Command::new("tmux");
     match (
         env::var("CELERIS_TMUX_SOCKET_NAME"),
@@ -42,7 +40,7 @@ fn tmux() -> Result<Command> {
     Ok(command)
 }
 
-trait TmuxExecuteExt {
+pub trait TmuxExecuteExt {
     fn execute(&mut self) -> Result<String>;
 }
 
@@ -61,17 +59,6 @@ impl TmuxExecuteExt for Command {
         }
         Ok(String::from_utf8(output.stdout).wrap_err_with(|| "Tmux returned invalid utf-8")?)
     }
-}
-
-fn targeted_command<T: Target + Display>(target: &T, command: &str) -> Result<Command> {
-    if !target_exists(target)? {
-        return Err(eyre!(
-            "tried to execute a commend: {command} with a non-existing target: {target}"
-        ));
-    }
-    let mut tmux = tmux()?;
-    tmux.args([command, "-t", target.get()]);
-    Ok(tmux)
 }
 
 pub fn server_running() -> Result<bool> {
@@ -125,18 +112,40 @@ impl AsRef<RootOptions> for Root {
     }
 }
 
-trait Target {
+pub trait Target {
     fn get(&self) -> &str;
+
+    fn target_exists(&self) -> Result<bool> {
+        let has_session_status = tmux()?
+            .args(["has-session", "-t", self.get()])
+            .stderr(Stdio::null())
+            .stdout(Stdio::null())
+            .status()
+            .wrap_err_with(|| "has-session failed to execute")?;
+        Ok(has_session_status.success())
+    }
+
+    fn targeted_command(&self, command: &str) -> Result<Command> {
+        if !self.target_exists()? {
+            return Err(eyre!(
+                "tried to execute a commend: {command} with a non-existing target: {}",
+                self.get()
+            ));
+        }
+        let mut tmux = tmux()?;
+        tmux.args([command, "-t", self.get()]);
+        Ok(tmux)
+    }
 }
 
 #[derive(Clone, Debug)]
-struct SessionTarget {
+pub struct SessionTarget {
     session_id: String,
     target: String,
 }
 
 #[derive(Clone, Debug)]
-struct WindowTarget {
+pub struct WindowTarget {
     session_id: String,
     window_id: String,
     target: String,
@@ -144,7 +153,7 @@ struct WindowTarget {
 
 #[derive(Clone, Debug)]
 #[allow(dead_code)]
-struct PaneTarget {
+pub struct PaneTarget {
     session_id: String,
     window_id: String,
     pane_id: String,
@@ -170,13 +179,6 @@ impl Target for SessionTarget {
     }
 }
 
-// TODO: figure out something better
-impl Display for SessionTarget {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.get())
-    }
-}
-
 impl WindowTarget {
     fn new(session_id: String, window_id: String) -> Self {
         Self {
@@ -192,12 +194,6 @@ impl WindowTarget {
             self.window_id.clone(),
             pane_id.to_owned(),
         )
-    }
-}
-
-impl Display for WindowTarget {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.get())
     }
 }
 
@@ -231,22 +227,6 @@ impl Target for PaneTarget {
     fn get(&self) -> &str {
         &self.target
     }
-}
-
-impl Display for PaneTarget {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.get())
-    }
-}
-
-fn target_exists<T: Target>(target: &T) -> Result<bool> {
-    let has_session_status = tmux()?
-        .args(["has-session", "-t", target.get()])
-        .stderr(Stdio::null())
-        .stdout(Stdio::null())
-        .status()
-        .wrap_err_with(|| "has-session failed to execute")?;
-    Ok(has_session_status.success())
 }
 
 pub trait BuilderTransform: Sized {

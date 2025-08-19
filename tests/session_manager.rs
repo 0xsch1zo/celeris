@@ -13,7 +13,7 @@ use itertools::Itertools;
 use rust_embed::Embed;
 use serde::Serialize;
 use std::fs::File;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -37,8 +37,9 @@ struct TemplateFiles;
 struct DefaultTemplate;
 
 #[derive(Serialize)]
-struct TestData {
-    session_root: PathBuf,
+struct TestData<'a> {
+    session_root: &'a Path,
+    session_name: &'a str,
 }
 
 #[test]
@@ -243,12 +244,13 @@ fn create_session_default_template() -> Result<()> {
         ..Config::default()
     });
     let layout_data = TestData {
-        session_root: env::temp_dir(),
+        session_root: &env::temp_dir(),
+        session_name: "test",
     };
 
     let opts = CreateSessionOptions {
         disable_editor: true,
-        path: layout_data.session_root.clone(),
+        path: layout_data.session_root.to_owned(),
         name: Some("test".to_owned()),
         machine_readable: false,
     };
@@ -277,7 +279,8 @@ fn create_session_custom_template() -> Result<()> {
         ..Config::default()
     });
     let layout_data = TestData {
-        session_root: env::temp_dir(),
+        session_root: &env::temp_dir(),
+        session_name: "test",
     };
     let mut handlebars = Handlebars::new();
     handlebars.register_embed_templates_with_extension::<TestFiles>(".lua")?;
@@ -285,7 +288,7 @@ fn create_session_custom_template() -> Result<()> {
     fs::write(dir_mgr.custom_template_path()?, &template_given)?;
 
     let opts = CreateSessionOptions {
-        path: layout_data.session_root,
+        path: layout_data.session_root.to_owned(),
         name: Some("test".to_owned()),
         disable_editor: true,
         machine_readable: false,
@@ -384,7 +387,8 @@ fn comp_test() -> Result<()> {
     let mut handlebars = Handlebars::new();
     handlebars.register_embed_templates_with_extension::<TemplateFiles>(".template.lua")?;
     let test_data = TestData {
-        session_root: env::temp_dir(),
+        session_root: &env::temp_dir(),
+        session_name: "comptest",
     };
     let layout_str = handlebars.render("comptest", &test_data)?;
     common::new_layout("comptest", &layout_str, dir_mgr.as_ref())?;

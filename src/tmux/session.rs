@@ -74,7 +74,7 @@ impl SessionBuilder {
     }
 
     pub fn build(&mut self) -> Result<Arc<Session>> {
-        if tmux::target_exists(&SessionTarget::new(&self.session_name))? {
+        if SessionTarget::new(&self.session_name).target_exists()? {
             return Err(eyre!(
                 "session with name: {}, already exists",
                 self.session_name
@@ -121,7 +121,7 @@ impl Session {
 
     pub fn from(session_identifier: &str) -> Result<Arc<Session>> {
         let session_identifier = format!("{session_identifier}:");
-        if !tmux::target_exists(&SessionTarget::new(&session_identifier))? {
+        if !SessionTarget::new(&session_identifier).target_exists()? {
             return Err(eyre!("session: {session_identifier}, doesn't exist"));
         }
 
@@ -199,8 +199,8 @@ impl Session {
 
     fn spawn_attach(&self, attached: TerminalState) -> Result<(Command, Child)> {
         let mut command = match attached {
-            TerminalState::InTmux => tmux::targeted_command(&self.target, "switch-client")?,
-            TerminalState::Normal => tmux::targeted_command(&self.target, "attach-session")?,
+            TerminalState::InTmux => self.target().targeted_command("switch-client")?,
+            TerminalState::Normal => self.target().targeted_command("attach-session")?,
         };
 
         let child = command
@@ -244,7 +244,6 @@ impl Session {
         Ok(())
     }
 
-    #[allow(private_interfaces)]
     pub fn target(&self) -> &SessionTarget {
         &self.target
     }
@@ -276,7 +275,9 @@ mod tests {
             .build()?;
 
         let session_from = Session::from(TESTING_SESSION)?;
-        let output = tmux::targeted_command(&session_from.target, "display-message")?
+        let output = session_from
+            .target()
+            .targeted_command("display-message")?
             .args(["-p", "test"])
             .execute()?;
         assert_eq!(output.trim(), "test");
@@ -306,7 +307,7 @@ mod tests {
         ];
 
         targets.into_iter().try_for_each(|target| -> Result<()> {
-            let exists = tmux::target_exists(&SessionTarget::new(&target))?;
+            let exists = SessionTarget::new(&target).target_exists()?;
             let mut command = tmux()?;
             let status = command.args(["has-session", "-t", &target]).status()?;
             assert_eq!(
@@ -362,10 +363,7 @@ mod tests {
     #[test]
     fn new_session() -> Result<()> {
         let session = testing_session()?;
-        assert!(
-            tmux::target_exists(&session.target)?,
-            "session doesn't exist"
-        );
+        assert!(session.target().target_exists()?, "session doesn't exist");
         Ok(())
     }
 
@@ -374,7 +372,9 @@ mod tests {
         let session = SessionBuilder::new(TESTING_SESSION.to_owned())
             .root(env::temp_dir())?
             .build()?;
-        let output = tmux::targeted_command(&session.target, "display-message")?
+        let output = session
+            .target()
+            .targeted_command("display-message")?
             .args(["-p", "#{pane_current_path}"])
             .execute()?;
         assert_eq!(output.trim(), &utils::path_to_string(&env::temp_dir())?);
@@ -384,7 +384,9 @@ mod tests {
     fn attach_test(attached: TerminalState) -> Result<()> {
         let session = testing_session()?;
         let (command, handle) = session.spawn_attach(attached.clone())?;
-        let output = tmux::targeted_command(&session.target, "display-message")?
+        let output = session
+            .target()
+            .targeted_command("display-message")?
             .args(["-p", "#{session_attached}"])
             .execute()?;
         if output.trim() != "1" {

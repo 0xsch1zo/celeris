@@ -1,8 +1,11 @@
-use crate::script::{
-    pane::{Direction, Pane},
-    session::Session,
-};
 use crate::tmux::{self, BuilderTransform};
+use crate::{
+    script::{
+        pane::{Direction, Pane},
+        session::Session,
+    },
+    tmux::Target,
+};
 use mlua::{ExternalResult, FromLua, Lua, LuaSerdeExt, Result, Table, UserData, Value};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -59,6 +62,10 @@ impl Window {
         this.inner.select().into_lua_err()?;
         Ok(())
     }
+
+    fn target(_: &Lua, this: &Self, _: ()) -> Result<String> {
+        Ok(this.inner.target().get().to_owned())
+    }
 }
 
 impl UserData for Window {
@@ -67,6 +74,7 @@ impl UserData for Window {
         methods.add_method("default_pane", Window::default_pane);
         methods.add_method("even_out", Window::even_out);
         methods.add_method("select", Window::select);
+        methods.add_method("target", Window::target);
     }
 }
 pub fn register(ctx: &Lua, api: &mut Table) -> Result<()> {

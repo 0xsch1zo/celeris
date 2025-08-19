@@ -213,7 +213,6 @@ mod list_sessions {
         }
     }
 
-    // TODO: make a good interface for the functionality
     pub fn run(layout_mgr: &LayoutManager, opts: Options) -> Result<String> {
         let layouts = layout_mgr.list().into_iter().map(ToOwned::to_owned);
         let running_sessions = Session::list_sessions()?;

@@ -92,7 +92,10 @@ impl WindowBuilder {
 
     fn create_window(&self) -> Result<WindowCore> {
         const DELIM: &str = "|";
-        let output = tmux::targeted_command(self.session.target(), "new-window")?
+        let output = self
+            .session
+            .target()
+            .targeted_command("new-window")?
             .args([
                 "-P",
                 "-F",
@@ -144,19 +147,20 @@ impl WindowCore {
     }
 
     fn set_option(&self, option: &str, value: &str) -> Result<()> {
-        tmux::targeted_command(&self.target, "set-window-option")?
+        self.target()
+            .targeted_command("set-window-option")?
             .args([option, value])
             .execute()?;
         Ok(())
     }
 
     fn select(&self) -> Result<()> {
-        tmux::targeted_command(&self.target, "select-window")?.execute()?;
+        self.target().targeted_command("select-window")?.execute()?;
         Ok(())
     }
 
     fn even_out(&self, direction: Direction) -> Result<()> {
-        let mut command = tmux::targeted_command(&self.target, "select-layout")?;
+        let mut command = self.target().targeted_command("select-layout")?;
         match direction {
             Direction::Vertical => command.arg("even-vertical"),
             Direction::Horizontal => command.arg("even-horizontal"),
@@ -169,10 +173,15 @@ impl WindowCore {
     pub fn move_kill(&self, other: &WindowTarget) -> Result<()> {
         // use a proper source target
         // wtf
-        tmux::targeted_command(&self.target, "move-window")?
+        self.target()
+            .targeted_command("move-window")?
             .args(["-s", self.target.get(), "-t", other.get(), "-k"])
             .execute()?;
         Ok(())
+    }
+
+    fn target(&self) -> &WindowTarget {
+        &self.target
     }
 }
 
@@ -209,9 +218,8 @@ impl Window {
         self.window_core.select()
     }
 
-    #[allow(private_interfaces)]
-    pub fn target(&self) -> &WindowTarget {
-        &self.window_core.target
+    pub fn target(&self) -> &impl Target {
+        self.window_core.target()
     }
 }
 
@@ -229,10 +237,13 @@ mod tests {
 
         let window = Window::builder(&session).build()?;
         assert!(
-            tmux::target_exists(&window.window_core.target)?,
+            window.window_core.target().target_exists()?,
             "window doesn't exist"
         );
-        let output = tmux::targeted_command(session.target(), "list-windows")?.execute()?;
+        let output = session
+            .target()
+            .targeted_command("list-windows")?
+            .execute()?;
         let count = output.lines().count();
         assert_eq!(count, 1, "default session window hasn't been moved");
         Ok(())
@@ -243,7 +254,9 @@ mod tests {
         let session = testing_session()?;
         let window = Window::builder(&session).root(env::temp_dir())?.build()?;
 
-        let output = tmux::targeted_command(&window.window_core.target, "display-message")?
+        let output = &window
+            .target()
+            .targeted_command("display-message")?
             .args(["-p", "#{pane_current_path}"])
             .execute()?;
 
@@ -256,7 +269,9 @@ mod tests {
         let session = testing_session()?;
         let window = Window::builder(&session).name("test".to_owned()).build()?;
 
-        let output = tmux::targeted_command(&window.window_core.target, "display-message")?
+        let output = &window
+            .target()
+            .targeted_command("display-message")?
             .args(["-p", "#{window_name}"])
             .execute()?;
         assert_eq!(output.trim(), "test");
@@ -275,7 +290,9 @@ mod tests {
         let window = Window::builder(&session).raw_command(command).build()?;
         // Yes the shell is sometimes this slow
         thread::sleep(Duration::from_secs(1));
-        let output = tmux::targeted_command(window.target(), "display-message")?
+        let output = window
+            .target()
+            .targeted_command("display-message")?
             .args(["-p", "#{pane_current_command}"])
             .execute()?;
         assert_eq!(output.trim(), real_command);
@@ -294,7 +311,9 @@ mod tests {
             .raw_command(command)
             .build()?;
         thread::sleep(Duration::from_secs(1));
-        let output = tmux::targeted_command(window.target(), "display-message")?
+        let output = window
+            .target()
+            .targeted_command("display-message")?
             .args(["-p", "#{pane_current_command}"])
             .execute()?;
         assert_eq!(output.trim(), real_command);
@@ -308,7 +327,9 @@ mod tests {
             .root(root.clone())?
             .build()?;
         let window = Window::builder(&session).build()?;
-        let output = tmux::targeted_command(window.target(), "display-message")?
+        let output = window
+            .target()
+            .targeted_command("display-message")?
             .args(["-p", "#{pane_current_path}"])
             .execute()?;
         assert_eq!(root.to_string_lossy(), output.trim());
@@ -322,8 +343,10 @@ mod tests {
         let option = ("allow-rename", "off");
         window.window_core.set_option(option.0, option.1)?;
 
-        let output =
-            tmux::targeted_command(&window.window_core.target, "show-window-options")?.execute()?;
+        let output = window
+            .target()
+            .targeted_command("show-window-options")?
+            .execute()?;
         let option_got = output.lines().find(|line| line.contains(option.0));
         let option_got =
             option_got.ok_or_eyre("couldn't find option which was supposed to be set")?;
@@ -340,7 +363,9 @@ mod tests {
         let window1 = Window::builder(&session).build()?;
         let _window2 = Window::builder(&session).build()?;
         window1.select()?;
-        let output = tmux::targeted_command(session.target(), "display-message")?
+        let output = session
+            .target()
+            .targeted_command("display-message")?
             .args(["-p", "#{window_id}"])
             .execute()?;
         assert!(window1.window_core.target.get().contains(output.trim()));
@@ -364,7 +389,7 @@ mod tests {
         let session = testing_session()?;
         let window = Window::builder(&session).build()?;
         let pane = window.default_pane();
-        assert_eq!(tmux::target_exists(pane.target())?, true);
+        assert_eq!(pane.target().target_exists()?, true);
         Ok(())
     }
 }
