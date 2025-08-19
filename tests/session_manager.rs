@@ -13,7 +13,7 @@ use itertools::Itertools;
 use rust_embed::Embed;
 use serde::Serialize;
 use std::fs::File;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -278,17 +278,12 @@ fn create_session_custom_template() -> Result<()> {
         disable_template: true,
         ..Config::default()
     });
-    let layout_data = TestData {
-        session_root: &env::temp_dir(),
-        session_name: "test",
-    };
-    let mut handlebars = Handlebars::new();
-    handlebars.register_embed_templates_with_extension::<TestFiles>(".lua")?;
-    let template_given = handlebars.render("generic_layout", &layout_data)?;
+    let template_given =
+        String::from_utf8(TemplateFiles::get("test.template.lua").unwrap().data.into()).unwrap();
     fs::write(dir_mgr.custom_template_path()?, &template_given)?;
 
     let opts = CreateSessionOptions {
-        path: layout_data.session_root.to_owned(),
+        path: env::temp_dir(),
         name: Some("test".to_owned()),
         disable_editor: true,
         machine_readable: false,
@@ -305,6 +300,14 @@ fn create_session_custom_template() -> Result<()> {
     let mut session_manager = test_session_manager(Arc::clone(dir_mgr.inner()))?;
     session_manager.create(opts)?;
     let template_got = fs::read_to_string(&layout_path)?;
+    let mut handlebars = Handlebars::new();
+    handlebars.register_embed_templates_with_extension::<TemplateFiles>(".template.lua")?;
+
+    let data = TestData {
+        session_root: &env::temp_dir(),
+        session_name: "test",
+    };
+    let template_given = handlebars.render_template(&template_given, &data)?;
     assert_eq!(template_got, template_given);
     Ok(())
 }
