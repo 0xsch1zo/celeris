@@ -2,10 +2,7 @@
 mod common;
 
 use crate::common::TestDirectoryManager;
-use celeris::{
-    config::{Config, SearchRoot},
-    repo_search,
-};
+use celeris::{Config, SearchRoot};
 use color_eyre::Result;
 use color_eyre::eyre::Context;
 use git2::Repository;
@@ -48,7 +45,7 @@ fn basic_search() -> Result<()> {
         .collect_vec();
     create_repos(Path::new(&search_root.path), &targets)?;
     let config = basic_config(search_root);
-    let results = repo_search::search(&config)?
+    let results = celeris::search(&config)?
         .into_iter()
         .map(PathBuf::from)
         .map(|p| p.file_name().unwrap().to_string_lossy().to_string())
@@ -84,7 +81,7 @@ path = "{}"
         })
         .collect::<Result<()>>()?;
 
-    let repos = repo_search::search(&config)?;
+    let repos = celeris::search(&config)?;
     let repos = repos.into_iter().map(PathBuf::from).collect_vec();
     assert_eq!(given_repos.iter().all(|r| repos.contains(r)), true);
     Ok(())
@@ -118,7 +115,7 @@ fn search_nested() -> Result<()> {
         .collect_vec();
 
     let config = basic_config(search_root);
-    let results = repo_search::search(&config)?
+    let results = celeris::search(&config)?
         .into_iter()
         .map(PathBuf::from)
         .sorted()
@@ -148,7 +145,7 @@ fn custom_depth() -> Result<()> {
 
     let config_custom_depth = basic_config(search_root.clone());
 
-    let custom_depth_results = repo_search::search(&config_custom_depth)?
+    let custom_depth_results = celeris::search(&config_custom_depth)?
         .into_iter()
         .map(PathBuf::from)
         .map(|repo| repo.file_name().unwrap().to_str().unwrap().to_owned())
@@ -165,7 +162,7 @@ fn custom_depth() -> Result<()> {
 
     let config_custom_depth = basic_config(search_root);
 
-    let custom_depth_results = repo_search::search(&config_custom_depth)?
+    let custom_depth_results = celeris::search(&config_custom_depth)?
         .into_iter()
         .map(PathBuf::from)
         .map(|repo| repo.file_name().unwrap().to_str().unwrap().to_owned())
@@ -203,7 +200,7 @@ fn search_subdirs() -> Result<()> {
         ..config.clone()
     };
 
-    let subdirs_results = repo_search::search(&config_subdirs)?
+    let subdirs_results = celeris::search(&config_subdirs)?
         .into_iter()
         .map(PathBuf::from)
         .map(|repo| repo.file_name().unwrap().to_str().unwrap().to_owned())
@@ -239,7 +236,7 @@ fn excludes() -> Result<()> {
     create_repos(Path::new(&search_root.path), &targets)?;
 
     let config = basic_config(search_root);
-    let results = repo_search::search(&config)?
+    let results = celeris::search(&config)?
         .into_iter()
         .map(PathBuf::from)
         .map(|p| p.file_name().unwrap().to_string_lossy().to_string())
@@ -265,7 +262,7 @@ fn excludes() -> Result<()> {
         excludes: vec!["test1".to_owned()],
         ..config
     };
-    let results = repo_search::search(&config)?
+    let results = celeris::search(&config)?
         .into_iter()
         .map(PathBuf::from)
         .map(|p| p.file_name().unwrap().to_string_lossy().to_string())
@@ -291,7 +288,7 @@ fn excludes() -> Result<()> {
         excludes: vec!["test1".to_owned()],
         ..config
     };
-    let results = repo_search::search(&config)?
+    let results = celeris::search(&config)?
         .into_iter()
         .map(PathBuf::from)
         .map(|p| p.file_name().unwrap().to_string_lossy().to_string())

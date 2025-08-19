@@ -2,7 +2,7 @@
 mod common;
 use std::fs;
 
-use celeris::config::Config;
+use celeris::Config;
 use color_eyre::{Result, eyre::Context};
 
 use common::TestDirectoryManager;

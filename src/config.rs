@@ -37,11 +37,6 @@ pub struct SearchRoot {
     pub excludes: Option<Vec<String>>,
 }
 
-pub enum PathType {
-    SearchRoot,
-    ExcludeDirectory,
-}
-
 impl Config {
     pub fn new(dir_mgr: &DirectoryManager) -> Result<Self> {
         const CONFIG_FILE: &'static str = "config.toml";

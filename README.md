@@ -23,7 +23,7 @@ A powerful, git-aware session manager written in Rust with a dynamic control lay
 
 ## Installation
 ```sh
-cargo install <crate.io name>
+cargo install celeris
 ```
 
 ## Usage

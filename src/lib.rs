@@ -1,9 +1,19 @@
-pub mod cli;
-pub mod config;
-pub mod directory_manager;
+mod config;
+mod directory_manager;
 mod layout;
-pub mod repo_search;
+mod repo_search;
 mod script;
-pub mod session_manager;
+mod session_manager;
 pub mod tmux;
 mod utils;
+
+#[doc(inline)]
+pub use config::{Config, SearchRoot};
+#[doc(inline)]
+pub use directory_manager::{DirectoryManager, DirectoryManagerBuilder};
+#[doc(inline)]
+pub use repo_search::search;
+#[doc(inline)]
+pub use session_manager::{
+    CreateSessionOptions, ListSessionsOptions, SessionManager, SwitchTarget,
+};

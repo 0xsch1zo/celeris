@@ -1,9 +1,7 @@
-use celeris::cli::{Cli, Commands};
-use celeris::config::Config;
-use celeris::directory_manager::DirectoryManager;
-use celeris::repo_search;
-use celeris::session_manager::SessionManager;
+mod cli;
+use celeris::{Config, DirectoryManager, SessionManager};
 use clap::Parser;
+use cli::{Cli, Commands};
 use color_eyre::Result;
 use color_eyre::eyre::Context;
 use std::io::{self, Write};
@@ -42,7 +40,7 @@ fn main() -> Result<()> {
         }
         _ => {
             let output = match cli.command {
-                Commands::Search => repo_search::search(&config)?.join("\n"),
+                Commands::Search => celeris::search(&config)?.join("\n"),
                 Commands::List { opts } => session_manager.list(opts.into())?,
                 _ => unreachable!(),
             };

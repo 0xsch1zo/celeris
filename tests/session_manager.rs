@@ -1,10 +1,10 @@
 #[allow(dead_code)]
 mod common;
 
-use celeris::config::Config;
-use celeris::session_manager::{CreateSessionOptions, SwitchTarget};
-use celeris::session_manager::{ListSessionsOptions, SessionManager};
+use celeris::Config;
 use celeris::tmux::Session;
+use celeris::{CreateSessionOptions, SwitchTarget};
+use celeris::{ListSessionsOptions, SessionManager};
 use color_eyre::eyre::eyre;
 use color_eyre::{Result, eyre::Context};
 use common::TestDirectoryManager;

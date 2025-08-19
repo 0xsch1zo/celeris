@@ -1,6 +1,4 @@
-use celeris::{
-    config::Config, directory_manager::DirectoryManager, session_manager::SessionManager,
-};
+use celeris::{Config, DirectoryManager, SessionManager};
 use color_eyre::{Result, eyre::Context};
 use delegate::delegate;
 use itertools::Itertools;

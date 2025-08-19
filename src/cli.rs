@@ -1,6 +1,4 @@
-use crate::session_manager::{
-    CreateSessionOptions, ListSessionsOptions as MgrListSessionsOptions, SwitchTarget,
-};
+use celeris::{CreateSessionOptions, ListSessionsOptions as MgrListSessionsOptions, SwitchTarget};
 use clap::{Args, Parser, Subcommand};
 use std::path::PathBuf;
 
