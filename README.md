@@ -207,3 +207,4 @@ Here is a list of patterns that will be replaced at runtime:
 
 ## Acknowledgments
 - [tsman](https://github.com/TecuceanuGabriel/tsman) - took inspiration from the readme format because I can't make things pretty
+- [tmux-sessionizer](https://github.com/jrmoulton/tmux-sessionizer)
