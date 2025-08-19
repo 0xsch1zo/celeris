@@ -16,12 +16,6 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - uses: dtolnay/rust-toolchain@stable
-
-    - name: Install deps
-      run: |
-        sudo apt update
-        sudo apt install -y libluajit-5.1-dev tmux
-
     - name: Install nextest
       uses: taiki-e/install-action@nextest
 

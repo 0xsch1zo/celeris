@@ -19,7 +19,6 @@ A powerful, git-aware session manager written in Rust with a dynamic control lay
 - Assemble your own workflows thanks to the modular design of the cli
 
 ## Requirements
-- luajit(if you have neovim you have it already)
 - tmux
 
 ## Installation

@@ -2,6 +2,17 @@
 name = "celeris"
 version = "0.1.0"
 edition = "2024"
+description = """
+A powerful, git-aware session manager written in Rust with a dynamic control layer in lua, 
+which allows for fast switching between sessions with a fuzzy picker or anything else thanks to the modular cli design.
+"""
+authors = ["0xsch1zo <sentientbottleofwine@gmail.com>"]
+license = "MIT OR Apache-2.0"
+readme = "README.md"
+homepage = "https://github.com/0xsch1zo/celeris/"
+repository = "https://github.com/0xsch1zo/celeris/"
+keywords = ["tmux", "session manager", "tmux session manager", "cli", "git"]
+categories = ["command-line-utilities"]
 
 [[bin]]
 name = "celeris"
@@ -21,12 +32,12 @@ clap = { version = "4.5.40", features = ["derive", "env"] }
 delegate = "0.13.4"
 ref-cast = "1.0.24"
 sanitize-filename = "0.6.0"
-mlua = { version = "0.11.1", features = ["luajit", "userdata-wrappers", "error-send", "serde", "macros"] }
+mlua = { version = "0.11.1", features = ["luajit", "userdata-wrappers", "error-send", "serde", "macros", "vendored"] }
 handlebars = { version = "6.3.2", features = ["rust-embed"] }
 rust-embed = "8.7.2"
-libtest-with = "0.8.1-10"
 
 [dev-dependencies]
+libtest-with = "0.8.1-10"
 test-with = { version = "0.15.2", features = ["runtime"] }
 
 [[test]]
