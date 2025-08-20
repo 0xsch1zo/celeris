@@ -1,9 +1,9 @@
 [package]
 name = "celeris"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 description = """
-A powerful, git-aware session manager written in Rust with a dynamic control layer in lua, 
+A powerful, git-aware tmux session manager written in Rust with a dynamic control layer in lua, 
 which allows for fast switching between sessions with a fuzzy picker or anything else thanks to the modular cli design.
 """
 authors = ["0xsch1zo <sentientbottleofwine@gmail.com>"]
@@ -11,7 +11,7 @@ license = "MIT OR Apache-2.0"
 readme = "README.md"
 homepage = "https://github.com/0xsch1zo/celeris/"
 repository = "https://github.com/0xsch1zo/celeris/"
-keywords = ["tmux", "session", "manager", "cli", "git"]
+keywords = ["productivity", "git", "tmux", "session", "manager"]
 categories = ["command-line-utilities"]
 
 [[bin]]
