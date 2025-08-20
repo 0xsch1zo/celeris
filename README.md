@@ -3,8 +3,12 @@
 # celeris
 A powerful, git-aware session manager written in Rust with a dynamic control layer in lua
 
-[Features](#features) • [Installation](#installation) • [Usage](#usage) •
-[Configuration](#configuring-celeris)
+[![tests](https://img.shields.io/github/check-runs/0xsch1zo/celeris/main?label=Tests)](github.com/0xsch1zo/celeris/actions)
+[![crates.io](https://img.shields.io/crates/v/celeris)](https://crates.io/crates/celeris)
+![license](https://img.shields.io/crates/l/celeris)
+
+[Features](#features) • [Installation](#installation) • [Usage](#usage) • [Configuration](#configuring-celeris)
+
 </div>
 
 ![video showcasing the main functionality](./assets/celeris_showcase.gif)
