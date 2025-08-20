@@ -137,7 +137,7 @@ assert(window_name == "foo")
 Each tmux component(session, window, pane) has a `target` method that can be used for interoperability with custom tmux commands.
 
 > [!WARNING]
-> Remember <b>with great power comes great responsibility</b> if you interact with components managed by celeris without knowing exactly what you're doing all sorts of weird things may happen.
+> Remember <b>with great power comes great responsibility</b>. If you interact with components managed by celeris without knowing exactly what you're doing all sorts of weird things may happen.
 > For example if you delete the pane that celeris manages it will most likely error out on you when it will try to use it.
 
 ### Switching between layouts

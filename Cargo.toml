@@ -11,7 +11,7 @@ license = "MIT OR Apache-2.0"
 readme = "README.md"
 homepage = "https://github.com/0xsch1zo/celeris/"
 repository = "https://github.com/0xsch1zo/celeris/"
-keywords = ["tmux", "session manager", "tmux session manager", "cli", "git"]
+keywords = ["tmux", "session", "manager", "cli", "git"]
 categories = ["command-line-utilities"]
 
 [[bin]]
