@@ -7,7 +7,7 @@ A powerful, git-aware session manager written in Rust with a dynamic control lay
 [Configuration](#configuring-celeris)
 </div>
 
-![show case of the main functionality](https://github.com/user-attachments/assets/9814a1d9-5101-43e6-9daf-eee9a80a164b)
+![video showcasing the main functionality](./assets/celeris_showcase.gif)
 
 ## Features
 - Quickly switch between sessions
@@ -167,7 +167,7 @@ Now you can use whichever picker you want here. The possibilities are endless.
 set -g status-right " #(celeris list --tmux-format --only-running)"
 ```
 With this we get a nice status bar which shows us in which session we are and which other ones are running:
-![status bar showing active sessions](https://github.com/user-attachments/assets/6467c303-d5ec-489e-85c0-0b1c2d7a1aba)
+![image of a status bar showing active sessions](./assets/celeris_statusbar.png)
 
 ### Other obvious commands
 Here are some helper commands which can be useful
