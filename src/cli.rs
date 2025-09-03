@@ -5,7 +5,7 @@ use std::path::PathBuf;
 #[derive(Parser)]
 #[command(about = "A powerful git-aware session-manager written in Rust")]
 #[command(long_about = None)]
-#[command(version = "v0.1.0")]
+#[command(version = "v0.1.2")]
 #[command(propagate_version = true)]
 pub struct Cli {
     /// Set a custom directory where the main session and scripts are stored

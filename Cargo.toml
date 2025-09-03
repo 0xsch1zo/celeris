@@ -1,6 +1,6 @@
 [package]
 name = "celeris"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2024"
 description = """
 A powerful, git-aware tmux session manager written in Rust with a dynamic control layer in lua, 
