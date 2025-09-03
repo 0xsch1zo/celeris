@@ -11,7 +11,9 @@ A powerful, git-aware session manager written in Rust with a dynamic control lay
 
 </div>
 
-![video showcasing the main functionality](./assets/celeris_showcase.gif)
+![video showcasing the main functionality](./assets/celeris.gif)
+
+![video showcasing the main functionality](./assets/celeris3.gif)
 
 ## Features
 - Quickly switch between sessions
@@ -154,9 +156,20 @@ Lists running and configured sessions(can be tweaked).
 celeris switch
 ```
 If a session is running switches to it, if it's not then loads it from the layout file if exists.
+
 There is the `-l`/`--last-session` flag which spawns the last layout loaded previously.
-It is useful for automatically opening a workspace on which you were working previously.
+Combining this with a bit of shell script in `.zshrc`(or `.bashrc`, whatever you use):
+```bash
+# if tmux is not running launch celeris
+if [[ ! `tmux server-info` ]]; then
+    celeris switch -l
+fi
+```
+And we get this:
+![video showcasing the last tmux session being auto-opened](./assets/celeris2.gif)
+
 <br>
+
 Now when we've created our layouts we can switch between the sessions quickly by configuring a binding in tmux:
 ```tmux
 bind 'j' run-shell "celeris switch `celeris list | fzf --tmux` || true"
