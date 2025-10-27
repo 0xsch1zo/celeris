@@ -59,7 +59,7 @@ const TARGET_TEST_STR: &str = "test";
 #[test]
 fn session_target() -> Result<()> {
     assert_eq!(
-        SessionTarget::new(TARGET_TEST_STR).get(),
+        SessionTarget::new(SessionDescriptors::Name(TARGET_TEST_STR.to_owned())).get(),
         &format!("{TARGET_TEST_STR}")
     );
     Ok(())
@@ -67,7 +67,7 @@ fn session_target() -> Result<()> {
 
 #[test]
 fn window_target() -> Result<()> {
-    let session_target = SessionTarget::new(TARGET_TEST_STR);
+    let session_target = SessionTarget::new(SessionDescriptors::Name(TARGET_TEST_STR.to_owned()));
     let window_target = session_target.window_target(TARGET_TEST_STR);
     assert_eq!(
         window_target.get(),
@@ -78,7 +78,7 @@ fn window_target() -> Result<()> {
 
 #[test]
 fn pane_target() -> Result<()> {
-    let session_target = SessionTarget::new(TARGET_TEST_STR);
+    let session_target = SessionTarget::new(SessionDescriptors::Name(TARGET_TEST_STR.to_owned()));
     let window_target = session_target.window_target(TARGET_TEST_STR);
     let pane_target = window_target.pane_target(TARGET_TEST_STR);
     assert_eq!(

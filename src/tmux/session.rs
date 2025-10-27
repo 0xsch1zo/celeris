@@ -1,9 +1,9 @@
-use crate::tmux::RootOptions;
 #[allow(unused)]
 use crate::tmux::{
     self, Root, SessionTarget, Target, TerminalState, TmuxExecuteExt, WindowTarget, tmux,
     window::WindowCore,
 };
+use crate::tmux::{RootOptions, SessionDescriptors};
 use crate::utils;
 use color_eyre::eyre::ContextCompat;
 use color_eyre::{
@@ -74,7 +74,9 @@ impl SessionBuilder {
     }
 
     pub fn build(&mut self) -> Result<Arc<Session>> {
-        if SessionTarget::new(&self.session_name).target_exists()? {
+        if SessionTarget::new(SessionDescriptors::Name(self.session_name.to_owned()))
+            .target_exists()?
+        {
             return Err(eyre!(
                 "session with name: {}, already exists",
                 self.session_name
@@ -90,7 +92,7 @@ impl SessionBuilder {
                 "failed to create session, couldn't parse session or window id: {}",
                 output
             ))?;
-        let session_target = SessionTarget::new(session_id);
+        let session_target = SessionTarget::new(SessionDescriptors::Id(session_id.to_owned()));
         let default_window_target = session_target.window_target(default_window_id);
         Ok(Session::new(session_target, default_window_target))
     }
@@ -119,10 +121,13 @@ impl Session {
         })
     }
 
-    pub fn from(session_identifier: &str) -> Result<Arc<Session>> {
-        let session_identifier = format!("{session_identifier}:");
-        if !SessionTarget::new(&session_identifier).target_exists()? {
-            return Err(eyre!("session: {session_identifier}, doesn't exist"));
+    /// IMPORTANT: session_id doesn't really have to be an id it can be the exact name of the
+    /// session but it will always get treated like an id (meaning it will not be allowed for it to
+    /// be a prefix of the session name for example)
+    pub fn from(session_id: &str) -> Result<Arc<Session>> {
+        let session_id = format!("{session_id}:");
+        if !SessionTarget::new(SessionDescriptors::Id(session_id.clone())).target_exists()? {
+            return Err(eyre!("session: {session_id}, doesn't exist"));
         }
 
         const DELIM: &str = "|";
@@ -131,7 +136,7 @@ impl Session {
                 "display-message",
                 "-p",
                 "-t",
-                &session_identifier,
+                &session_id,
                 &format!(
                     "{}{}{}{}{}",
                     "#{window_id}", DELIM, "#{session_id}", DELIM, "#{session_windows}"
@@ -150,7 +155,7 @@ impl Session {
             "failed to parse window_count while creating session object from existing session",
         )?;
 
-        let target = SessionTarget::new(session_id);
+        let target = SessionTarget::new(SessionDescriptors::Id(session_id.to_owned()));
         let default_window_target = target.window_target(default_window_id);
         Ok(Arc::new(Self {
             window_count: window_count.into(),
@@ -290,24 +295,26 @@ mod tests {
     fn target_exits() -> Result<()> {
         let session = testing_session()?;
         // also used for pane
+        let session_descriptor = session.target.descriptor.to_string(); // we assume it's a name
         let window_target = format!(
             "{}:{}",
-            session.target.session_id, session.default_window_target.window_id
+            session_descriptor, session.default_window_target.window_id
         );
         let targets = vec![
-            format!("{}:", session.target.session_id),
+            format!("{}:", session_descriptor),
             selected_pane_id(&window_target)?,
             window_target.clone(),
             "2137:".to_owned(),
-            format!("{}:2137", session.target.session_id),
+            format!("{}:2137", session_descriptor),
             format!(
                 "{}:{}.2137",
-                session.target.session_id, session.default_window_target.window_id
+                session_descriptor, session.default_window_target.window_id
             ),
         ];
 
         targets.into_iter().try_for_each(|target| -> Result<()> {
-            let exists = SessionTarget::new(&target).target_exists()?;
+            let exists =
+                SessionTarget::new(SessionDescriptors::Id(target.clone())).target_exists()?;
             let mut command = tmux()?;
             let status = command.args(["has-session", "-t", &target]).status()?;
             assert_eq!(

@@ -139,8 +139,24 @@ pub trait Target {
 }
 
 #[derive(Clone, Debug)]
+pub enum SessionDescriptors {
+    Name(String),
+    Id(String),
+}
+
+impl ToString for SessionDescriptors {
+    fn to_string(&self) -> String {
+        match self {
+            SessionDescriptors::Id(id) => id,
+            SessionDescriptors::Name(name) => name,
+        }
+        .to_owned()
+    }
+}
+
+#[derive(Clone, Debug)]
 pub struct SessionTarget {
-    session_id: String,
+    descriptor: SessionDescriptors,
     target: String,
 }
 
@@ -161,15 +177,19 @@ pub struct PaneTarget {
 }
 
 impl SessionTarget {
-    pub fn new(session_id: &str) -> Self {
+    pub fn new(descriptor: SessionDescriptors) -> Self {
         Self {
-            session_id: session_id.to_owned(),
-            target: session_id.to_owned(),
+            target: descriptor.to_string(),
+            descriptor: descriptor,
         }
     }
 
     pub fn window_target(&self, window_id: &str) -> WindowTarget {
-        WindowTarget::new(self.session_id.clone(), window_id.to_owned())
+        WindowTarget::new(self.descriptor.to_string(), window_id.to_owned())
+    }
+
+    pub fn descriptor(&self) -> &SessionDescriptors {
+        &self.descriptor
     }
 }
 
