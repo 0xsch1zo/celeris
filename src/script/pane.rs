@@ -142,7 +142,7 @@ impl UserData for Pane {
         methods.add_method("split", Pane::split);
         methods.add_method("select", Pane::select);
         methods.add_method("run_command", Pane::run_command);
-        methods.add_method("target", Pane::target);
+        methods.add_method("target", Pane::target)
     }
 }
 

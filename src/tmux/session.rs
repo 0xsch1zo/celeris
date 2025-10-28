@@ -1,9 +1,9 @@
+use crate::tmux::RootOptions;
 #[allow(unused)]
 use crate::tmux::{
     self, Root, SessionTarget, Target, TerminalState, TmuxExecuteExt, WindowTarget, tmux,
     window::WindowCore,
 };
-use crate::tmux::{RootOptions, SessionDescriptors};
 use crate::utils;
 use color_eyre::eyre::ContextCompat;
 use color_eyre::{
@@ -37,7 +37,7 @@ impl SessionBuilder {
             root: Root::custom(path.clone()).wrap_err_with(|| {
                 format!(
                     "session root for session: {} is invalid: {path:?}",
-                    &self.session_name
+                    &self.session_name,
                 )
             })?,
             ..self
@@ -74,12 +74,11 @@ impl SessionBuilder {
     }
 
     pub fn build(&mut self) -> Result<Arc<Session>> {
-        if SessionTarget::new(SessionDescriptors::Name(self.session_name.to_owned()))
-            .target_exists()?
-        {
+        let session_desc = SessionDescriptor::Name(self.session_name.clone());
+        if SessionTarget::new(&session_desc.to_valid_identifier()).target_exists()? {
             return Err(eyre!(
-                "session with name: {}, already exists",
-                self.session_name
+                "session with name: {:?}, already exists",
+                self.session_name,
             ));
         }
 
@@ -92,13 +91,28 @@ impl SessionBuilder {
                 "failed to create session, couldn't parse session or window id: {}",
                 output
             ))?;
-        let session_target = SessionTarget::new(SessionDescriptors::Id(session_id.to_owned()));
+        let session_target = SessionTarget::new(session_id);
         let default_window_target = session_target.window_target(default_window_id);
         Ok(Session::new(session_target, default_window_target))
     }
 }
 
 impl tmux::BuilderTransform for SessionBuilder {}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SessionDescriptor {
+    Id(String),
+    Name(String),
+}
+
+impl SessionDescriptor {
+    fn to_valid_identifier(&self) -> String {
+        match self {
+            Self::Id(id) => id.to_owned(),
+            Self::Name(name) => format!("={name}"),
+        }
+    }
+}
 
 #[derive(Debug)]
 pub struct Session {
@@ -121,13 +135,10 @@ impl Session {
         })
     }
 
-    /// IMPORTANT: session_id doesn't really have to be an id it can be the exact name of the
-    /// session but it will always get treated like an id (meaning it will not be allowed for it to
-    /// be a prefix of the session name for example)
-    pub fn from(session_id: &str) -> Result<Arc<Session>> {
-        let session_id = format!("{session_id}:");
-        if !SessionTarget::new(SessionDescriptors::Id(session_id.clone())).target_exists()? {
-            return Err(eyre!("session: {session_id}, doesn't exist"));
+    pub fn from_descriptor(session_desc: SessionDescriptor) -> Result<Arc<Session>> {
+        let session_identifier = format!("{}:", session_desc.to_valid_identifier());
+        if !SessionTarget::new(&session_identifier).target_exists()? {
+            return Err(eyre!("session: {session_identifier}, doesn't exist"));
         }
 
         const DELIM: &str = "|";
@@ -136,11 +147,8 @@ impl Session {
                 "display-message",
                 "-p",
                 "-t",
-                &session_id,
-                &format!(
-                    "{}{}{}{}{}",
-                    "#{window_id}", DELIM, "#{session_id}", DELIM, "#{session_windows}"
-                ),
+                &session_identifier,
+                &["#{window_id}", "#{session_id}", "#{session_windows}"].join(DELIM),
             ])
             .execute()?;
 
@@ -155,7 +163,7 @@ impl Session {
             "failed to parse window_count while creating session object from existing session",
         )?;
 
-        let target = SessionTarget::new(SessionDescriptors::Id(session_id.to_owned()));
+        let target = SessionTarget::new(session_id);
         let default_window_target = target.window_target(default_window_id);
         Ok(Arc::new(Self {
             window_count: window_count.into(),
@@ -164,7 +172,6 @@ impl Session {
         }))
     }
 
-    // Checks if in the current environment there is an attached session
     fn terminal_state() -> Result<TerminalState> {
         Ok(match env::var("TMUX") {
             Ok(_) => TerminalState::InTmux,
@@ -279,7 +286,8 @@ mod tests {
             .name("__celeris_testing_dummy".to_owned())
             .build()?;
 
-        let session_from = Session::from(TESTING_SESSION)?;
+        let session_from =
+            Session::from_descriptor(SessionDescriptor::Name(TESTING_SESSION.to_owned()))?;
         let output = session_from
             .target()
             .targeted_command("display-message")?
@@ -292,10 +300,33 @@ mod tests {
     }
 
     #[test]
+    fn sessions_prefix_name() -> Result<()> {
+        let session_name_1 = "__celeris_testing_foobar".to_owned();
+        let session_name_2 = "__celeris_testing_foo".to_owned();
+        let _session1 = Session::builder(session_name_1).build()?;
+        let _session2 = Session::builder(session_name_2).build()?; // we shouldn't get an error
+        // from new saying that our
+        // session is already running
+        Ok(())
+    }
+
+    #[test]
+    fn from_prefix_name() -> Result<()> {
+        let session_name_1 = "__celeris_testing_foobar".to_owned();
+        let session_name_2 = "__celeris_testing_foo".to_owned();
+        let _session1 = Session::builder(session_name_1).build()?;
+        let _session2 = Session::builder(session_name_2).build()?;
+
+        let session2 =
+            Session::from_descriptor(SessionDescriptor::Name("__celeris_testing_foo".to_owned()))?;
+        assert_eq!(session2.target().get(), _session2.target().get());
+        Ok(())
+    }
+
+    #[test]
     fn target_exits() -> Result<()> {
         let session = testing_session()?;
-        // also used for pane
-        let session_descriptor = session.target.descriptor.to_string(); // we assume it's a name
+        let session_descriptor = session.target.get();
         let window_target = format!(
             "{}:{}",
             session_descriptor, session.default_window_target.window_id
@@ -313,8 +344,7 @@ mod tests {
         ];
 
         targets.into_iter().try_for_each(|target| -> Result<()> {
-            let exists =
-                SessionTarget::new(SessionDescriptors::Id(target.clone())).target_exists()?;
+            let exists = SessionTarget::new(&target).target_exists()?;
             let mut command = tmux()?;
             let status = command.args(["has-session", "-t", &target]).status()?;
             assert_eq!(
@@ -350,18 +380,18 @@ mod tests {
         let session_name_2 = "__celeris_testing_2";
         let _session1 = SessionBuilder::new(session_name_1.to_owned()).build()?; // to stop the session
         // from being dropped
-        let _session2 = SessionBuilder::new(session_name_2.to_lowercase()).build()?;
+        let _session2 = SessionBuilder::new(session_name_2.to_owned()).build()?;
         let sessions = Session::list_sessions()?;
         assert!(
             sessions
                 .iter()
-                .find(|name| *name == session_name_1)
+                .find(|name| *name == &session_name_1)
                 .is_some()
         );
         assert!(
             sessions
                 .iter()
-                .find(|name| *name == session_name_2)
+                .find(|name| *name == &session_name_2)
                 .is_some()
         );
         Ok(())

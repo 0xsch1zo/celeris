@@ -6,6 +6,7 @@ use crate::layout::LayoutManager;
 use crate::layout::LayoutName;
 use crate::script;
 use crate::tmux::Session;
+use crate::tmux::SessionDescriptor;
 use crate::utils;
 use color_eyre::Result;
 use color_eyre::eyre::OptionExt;
@@ -144,7 +145,7 @@ impl SessionManager {
             .save_if_layout(&tmux_name)
             .wrap_err("failed to save session name for later use")?;
         if running_sessions.contains(&tmux_name) {
-            let session = Session::from(&tmux_name)?;
+            let session = Session::from_descriptor(SessionDescriptor::Name(tmux_name))?;
             session.attach()?;
         } else {
             self.run(&tmux_name)?;

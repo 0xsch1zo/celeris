@@ -19,7 +19,7 @@ use std::{
 };
 
 pub use pane::{Direction, Pane, SplitBuilder, SplitSize};
-pub use session::{Session, SessionBuilder};
+pub use session::{Session, SessionBuilder, SessionDescriptor};
 pub use window::{Window, WindowBuilder};
 
 pub fn tmux() -> Result<Command> {
@@ -139,24 +139,8 @@ pub trait Target {
 }
 
 #[derive(Clone, Debug)]
-pub enum SessionDescriptors {
-    Name(String),
-    Id(String),
-}
-
-impl ToString for SessionDescriptors {
-    fn to_string(&self) -> String {
-        match self {
-            SessionDescriptors::Id(id) => id,
-            SessionDescriptors::Name(name) => name,
-        }
-        .to_owned()
-    }
-}
-
-#[derive(Clone, Debug)]
 pub struct SessionTarget {
-    descriptor: SessionDescriptors,
+    session_id: String,
     target: String,
 }
 
@@ -177,19 +161,15 @@ pub struct PaneTarget {
 }
 
 impl SessionTarget {
-    pub fn new(descriptor: SessionDescriptors) -> Self {
+    pub fn new(session_id: &str) -> Self {
         Self {
-            target: descriptor.to_string(),
-            descriptor: descriptor,
+            target: session_id.to_owned(),
+            session_id: session_id.to_owned(),
         }
     }
 
     pub fn window_target(&self, window_id: &str) -> WindowTarget {
-        WindowTarget::new(self.descriptor.to_string(), window_id.to_owned())
-    }
-
-    pub fn descriptor(&self) -> &SessionDescriptors {
-        &self.descriptor
+        WindowTarget::new(self.session_id.to_owned(), window_id.to_owned())
     }
 }
 
